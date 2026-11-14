@@ -485,11 +485,13 @@ void alphasneo_state::asneo(machine_config &cfg) {
 }
 ROM_START(asneo)
     // Files are user-provided update packages, not a complete physical NOR dump.
-    // No hash here: private ROMs are intentionally not part of this public repo.
+    // Checksums are metadata only; private binaries are never published here.
     ROM_REGION(0x581a,"smallrom",0)
-    ROM_LOAD("smallos3kneorom.os3kos",0,0x581a,"")
+    ROM_LOAD("smallos3kneorom.os3kos",0,0x581a,
+        CRC(ed88f65a) SHA1(78a3bcbb81773335f69c8964ff8a114e0d7712cf))
     ROM_REGION(0x60800,"system",0)
-    ROM_LOAD("os3kneorom.os3kos",0,0x60800,"")
+    ROM_LOAD("os3kneorom.os3kos",0,0x60800,
+        CRC(cbb60113) SHA1(30ebd3be9da12186b8f8146b251f0e21b95e74ad))
 ROM_END
 
 // These are private *data* variants, not emulator variants or new hardware.
