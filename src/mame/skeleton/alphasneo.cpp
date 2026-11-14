@@ -50,8 +50,8 @@ class alphasneo_state : public driver_device {
 public:
     alphasneo_state(const machine_config &cfg,device_type type,const char *tag)
         :driver_device(cfg,type,tag),m_cpu(*this,"maincpu"),
+         m_uart(*this,"uart%u",0U),
          m_rows(*this,"ROW%u",0U),m_nor_config(*this,"NOR_PROFILE"),
-          m_uart(*this,"uart%u",0U),
          m_flash_nvram(*this,"flashnv"),m_ram_nvram(*this,"ramnv") {}
     void asneo(machine_config &cfg);
 protected:
