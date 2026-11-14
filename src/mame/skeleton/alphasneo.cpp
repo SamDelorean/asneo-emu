@@ -109,8 +109,8 @@ void alphasneo_state::machine_start() {
     m_clk32_timer=timer_alloc(FUNC(alphasneo_state::clk32_tick),this);
     m_compare_timers[0]=timer_alloc(FUNC(alphasneo_state::timer1_compare),this);
     m_compare_timers[1]=timer_alloc(FUNC(alphasneo_state::timer2_compare),this);
-    const auto *small=memregion("smallrom");
-    const auto *system=memregion("system");
+    auto *small=memregion("smallrom");
+    auto *system=memregion("system");
     std::string error;
     m_firmware_valid=neo::firmware::install_small(small->base(),small->bytes(),m_flash_seed,error);
     if(m_firmware_valid)
@@ -458,7 +458,7 @@ void alphasneo_state::asneo(machine_config &cfg) {
     // 33 MHz is the current neo-re timing reference, not physically certified.
     NEO_VZ_CPU(cfg,m_cpu,33'000'000);
     m_cpu->set_addrmap(AS_PROGRAM,&alphasneo_state::mem_map);
-    m_cpu->set_addrmap(AS_CPU_SPACE,&alphasneo_state::cpu_space_map);
+    m_cpu->set_addrmap(m68000_base_device::AS_CPU_SPACE,&alphasneo_state::cpu_space_map);
     screen_device &screen(SCREEN(cfg,"screen",SCREEN_TYPE_LCD));
     screen.set_refresh_hz(60);
     screen.set_size(neo::lcd::width,neo::lcd::height);
