@@ -27,3 +27,25 @@ En las definiciones MAME se incluyen CRC32/SHA1 reales. No hay firmware nuevo en
 - Ante un NVRAM previamente guardado, MAME mantiene el estado persistido y no vuelca de nuevo la ROM de base. Para pruebas de arranque limpio usar un directorio NVRAM de pruebas separado, no borrar archivos de usuario.
 - **PASS de construcción y comparación de imagen es sólo estático.** El driver completo, carga MAME, salto al sistema y ejecución de AlphaWord quedan pendientes de compilación y evidencia real; `MACHINE_NOT_WORKING` permanece.
 - Si una compilación nativa `neo-diag` está activa, no modificar su árbol a mitad de compilación. Integrar este commit en una futura compilación incremental tras obtener resultado final del trabajo previo.
+
+## Evidencia nativa T640 — PASS (2026-11-14)
+
+Commit integrado y compilado: `a09d1479c5adbc242026302e20b3400c8c68bd6f`.
+
+- Árbol y **binario únicos**: `/home/spc/Projects/alphasmart/neo-diag/neo-diag`; SHA256 `667a0014fd5809b3ff669df3ec9522d5215caed63ed794fb629ea3a6543db788`.
+- Flash privada verificada por SHA256 en `/home/spc/Projects/alphasmart/private/roms/neo/os3k_minimal`, ambas imágenes de 4 MiB, intactas.
+- El driver compiló y enlazó incrementalmente con GCC 15.2, utilizando dependencias anteriores; `asneo`, `asneob` y `asneow` registrados.
+- Auditoría MAME real: `romset asneob [asneo] is good`, `romset asneow [asneo] is good`; ambos `1 romsets found, 1 were OK`.
+- Prueba sin GUI `-seconds_to_run 3`, NVRAM de ensayo independiente: ambos sets llegaron a salida `MAME_EXIT_CODE=0`; no hubo errores de validación de etiquetas de ROM tras corregir el uso obligatorio de minúsculas en `ROM_LOAD`. Las etiquetas MAME son `os3k_neo_min_boot.bin` y `os3k_neo_min_writer.bin`; son enlaces a los archivos canónicos privados `OS3K_NEO_MIN_*.bin`, no copias.
+- En el entorno headless aparecen avisos del sistema gráfico `XDG_RUNTIME_DIR` y ALSA (no se evaluó audio); no son demostración de fallo de CPU.
+- **NO** se declara `FULL_OS_BOOT` ni `WRITER_VISIBLE`: no se verificó PC alcanzando System 3, interfaz LCD con texto ni pulsaciones host->Writer.
+
+Resultados en Drive (`AS2K_TEMP/NEO_DIAG_PIPELINE/outbox`):
+- [Estado PASS](https://drive.google.com/file/d/1awxErCClx_iuP6AOKGjKoIVv9kE6XgiK/view)
+- [Comprobación de ROMs](https://drive.google.com/file/d/1-MH57LGYlnrHnk9mP0ORW6nbXeDdg5At/view)
+- [Ejecución BOOT](https://drive.google.com/file/d/1mgjPBQH2ufNnzYu6R0RtY3PEsb2djCXN/view)
+- [Ejecución WRITER](https://drive.google.com/file/d/1Sof9hGZRYbdMuluHqguS2IXlDMbIn7PT/view)
+- [Hashes de imágenes y ejecutable](https://drive.google.com/file/d/1gAgDk7ulEEEP9p55ffNMytNj4JiaDFFR/view)
+- [Estado funcional desglosado](https://drive.google.com/file/d/1HUyCTLz76s5THqdW35B3MgOyYs2iEybz/view)
+
+La primera validación `46be3fc` sí compiló y comprobó ROM, pero MAME detectó etiquetas uppercase inválidas en los dos sets durante la prueba del proceso, aunque éste retornó 0. Se corrigió en `a09d147` y sólo este último se considera el resultado válido y cerrado de integración.

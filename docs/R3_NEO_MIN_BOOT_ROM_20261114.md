@@ -35,8 +35,8 @@ Vectores originales `SSP=0x0007FFF0` y `PC=0x0040042A`; SmartApplet storage comi
 
 ## Límites importantes
 - Este archivo es una **imagen virtual ensamblada** para pruebas; no es un dump de memoria Flash física ni demuestra su estado original.
-- El driver MAME NEO publicado hasta hoy carga **SmallROM y System como dos paquetes originales** y los instala en Flash virtual; todavía **no tiene un selector** para cargar directamente el `OS3K_NEO_MIN_BOOT.bin`. No modificar el driver mientras se compila otra revisión.
-- **NO** se probó arranque MAME con este archivo y **NO** hay BOOT PASS; el trabajo de compilación `neo-diag` se sigue acreditando por separado.
+- El driver MAME NEO publicado hasta hoy carga **SmallROM y System como dos paquetes originales** y los instala en Flash virtual; ya **tiene una selección nativa mediante los sets asneob y asneow** para cargar directamente el `OS3K_NEO_MIN_BOOT.bin`. La integración se validó en T640 con compilación, auditoría de ambas ROM y ejecución breve de proceso. El arranque de System 3 y la visibilidad de Writer siguen sin acreditar; ver [NEO_DIAG_ROM_VARIANTS.md](NEO_DIAG_ROM_VARIANTS.md).
+- **Se ejecutó un smoke test MAME sin GUI con este archivo, pero NO hay BOOT PASS del System 3**; el trabajo de compilación `neo-diag` se sigue acreditando por separado.
 - No publicar la imagen, paquetes originales ni SmartApplets en GitHub abierto.
 
 ## Ejecución reproducible
