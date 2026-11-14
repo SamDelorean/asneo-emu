@@ -5,8 +5,8 @@ Fecha: 2026-11-14. La intención del usuario es usar ambas variantes de ROM igua
 ## Archivos privados verificados
 | Variante | Flash | CRC32 | SHA-1 | SHA-256 |
 |---|---:|---|---|---|
-| `OS3K_NEO_MIN_BOOT.bin` | 4 MiB | `0bb36e55` | `5930ee13122d26d690748206407baeec5e33be06` | `d9ca602b1253e727e39f53ab113e00c4f87a5835a0843845622ca50dea3cf4bc` |
-| `OS3K_NEO_MIN_WRITER.bin` | 4 MiB | `080b51c3` | `7bf9476ff6eb3384da05cacea8bb20a641043c3a` | `7fbc224f050d648011e1e50c7dc1ba3c5eda109e3b02c817e0ae03ec042b9820` |
+| `OS3K_NEO_MIN_BOOT.bin` | 4 MiB | `7321c03f` | `8b556e1dda4588b9380fbf895ece11c52c7f18f8` | `e0e962dfaf7cc8f914c17708c8f9da924e13e44fb0bf8d7fbe015bd8c5c87765` |
+| `OS3K_NEO_MIN_WRITER.bin` | 4 MiB | `7099ffa9` | `334b867183acf6f537823ddd4aa6743fe3d2dd8e` | `a14ccd938e1fccb62b839870dbb1942a9bfafb6d51f9dfd42d9ad82399665626` |
 
 Ambas están en `ALPHASMART/private/neo/os3k_minimal` y la copia local autorizada debe quedar en `/home/spc/Projects/alphasmart/private/roms/neo/os3k_minimal`.
 
@@ -69,3 +69,6 @@ Las dos imágenes ejecutan SmallROM, pero no tienen transición a System 3 acred
 
 ## R5 UART VZ — Integración nativa cerrada
 La UART universal de Dana ya está incorporada al único `neo-diag` en T con `ROM_AUDIT=PASS`, ejecución de BOOT y WRITER de 24 segundos, y binario SHA256 `98270ba2c257ccbac6a3ca52d7c6c0c6c991ab5fb536d5fc5ba7a4a96d1ca4d6`. Mejoró la progresión dentro de SmallROM (115→235 PC distintos), pero System 3/AlphaWord todavía no presentan arranque visible o PC en sus regiones. Ver [R5_VZ_UART_INTEGRATION_20261114.md](R5_VZ_UART_INTEGRATION_20261114.md).
+
+## R6 — Corrección de las dos ROM activas (2026-11-14)
+El ensamblador de firmware se corrigió al mapa real de bloques de 0x400 bytes; System3 ahora ejecuta sus rutinas y presenta el diálogo auténtico de batería. La tecla Y se verificó, y el siguiente paso físico de interfaz pide Enter para reiniciar. El único binario en T es SHA256 `386635d9f9e9eef1d48662d6ea0834b03fa37445de175c306352d28ba4490534`. Los SHA de la tabla inicial son los **activos vigentes**; las pruebas R4/R5 documentadas más arriba son históricas y usaron los viejos medios R3 inválidos. Ver [R6](R6_FLASH_SEGMENT_ALIGNMENT_20261114.md).

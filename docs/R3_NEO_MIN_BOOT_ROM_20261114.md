@@ -1,3 +1,5 @@
+> **REGISTRO HISTÓRICO SUPERADO POR R6:** las imágenes R3 descritas abajo estaban mal ensambladas (cursor inicial +0x70 y bloques secundarios sin alineación). **No utilizarlas como ROM activa.** Las dos imágenes corregidas y los SHA vigentes están en [R6_FLASH_SEGMENT_ALIGNMENT_20261114.md](R6_FLASH_SEGMENT_ALIGNMENT_20261114.md). Se archivan R3 únicamente como evidencia de fallo reproducible.
+
 # NEO R3 — ROM mínima de arranque (14-nov-2026)
 
 ## Producto real

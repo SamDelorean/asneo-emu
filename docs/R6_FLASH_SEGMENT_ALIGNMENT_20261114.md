@@ -35,3 +35,26 @@ El constructor reproducible, el manifiesto de hashes y ambas imágenes **están 
 3. Validar ROM sets y trazas de 24s con NVRAM aislada y capturas LCD; comparar PC contra R5.
 4. Mantener las ROMs R3 como archivadas y sustituir únicamente las dos imágenes BOOT/WRITER **después** de la validación.
 5. Registrar `PASS` de integridad, compilación y ejecución por separado de `BOOT_PASS`.
+
+## Resultados nativos en T640 — cierre R6
+**Compilación y medios corregidos: PASS**. Job `NEO_DIAG_R6_CORRECT_MEDIA_20261114`, `STATUS=PASS`, `STAGE=END`, `EXIT_CODE=0`, PIN `6de5b9f`. [Recibo Drive](https://drive.google.com/file/d/1XxqUWuopwZiowtGt3Z__8Qp13QY2j_1n/view); [logs, hashes y resumen](https://drive.google.com/file/d/1_tLksTjWFHdbvU-1CpGw6tB24-subh-u/view); [auditoría de ambos sets](https://drive.google.com/file/d/1I3TcMakmhJD1l2jUF_Qvk6BaPvlP5c0E/view).
+
+- Pruebas sintéticas `neo_components`, `neo_vz_core`, `neo_nor` y link MAME 0.289: **PASS**.
+- Un solo ejecutable instalado: `/home/spc/Projects/alphasmart/neo-diag/neo-diag`, SHA256 `386635d9f9e9eef1d48662d6ea0834b03fa37445de175c306352d28ba4490534`.
+- ROM BOOT SHA256 `e0e962dfaf7cc8f914c17708c8f9da924e13e44fb0bf8d7fbe015bd8c5c87765` y WRITER `a14ccd938e1fccb62b839870dbb1942a9bfafb6d51f9dfd42d9ad82399665626`. Ambos 4MiB, exactamente **dos** opciones del mismo emulador.
+- Auditoría MAME de BOOT y WRITER: **PASS**, tanto con ruta candidata como canónica.
+- Traces 24s con NVRAM aislada: ambos entraron a System 3 desde el frame 10; `PC` en `0x00423xxx` y `0x004264xx`, 129 PCs distintos, 1,431 cambios. Contrasta con R5: 0 muestras System 3 en 24s con medio mal ensamblado.
+- LCD **renderizado, no hipotético**: [BOOT frame1380](https://drive.google.com/file/d/1SgBoqNWa1zspUm-qVdY1jt-_cv6UnJyy/view), [WRITER frame1380](https://drive.google.com/file/d/1SEQGLogkC-QnNT-jA1DS9PeV4y0ywbSe/view). Mensaje: "An unexpected data change occurred. Did you recently remove or replace the AlphaSmart's lithium backup battery? (Y for yes, N for no)". Es inicialización de memoria de respaldo de una NVRAM de ensayo, no error de importación ROM.
+- [Traza BOOT](https://drive.google.com/file/d/10N-l-btuh4r2WJtanlggss_gd6ObJbF5/view), [WRITER](https://drive.google.com/file/d/1ZGiIA2O_U7Irrh3dDZNTJ6cyn1AACHey/view) confirman los primeros opcodes originales de las entradas y metadata de los dos tráileres.
+- **Drive canónico corregido in-place** preservando los mismos IDs de archivo; se materializaron las dos imágenes y verificaron de nuevo los SHA256 y comparación exacta con los candidatos. Las versiones R3 se conservaron en [archivo privado](https://drive.google.com/drive/folders/1nwmWYqhGp8b_16qvRBLBT5Ez36AjrGrc) y en T, nunca en GitHub.
+- El código fuente reproducible y el manifiesto R6 están en `ALPHASMART/private/neo/os3k_minimal`.
+
+### Prueba de teclado Y real (NVRAM sólo de ensayo)
+Job `NEO_DIAG_R6_KEYINIT_20261114`, **PASS / EXIT_CODE=0** ([recibo](https://drive.google.com/file/d/14RbQa5cWqc4kPIx-Xb-oqKD6FrXmR4R9/view)).
+El input MAME `Y [0x0f]` en ROW15 pasó `FF→FE→FF` en ambos sets. Los píxeles activos del LCD pasaron 1763→1543 y la pantalla cambió a:
+
+"Your AlphaSmart needs to be restarted. You should not see the previous message again. Press the enter key to restart..."
+
+Captura real: [BOOT tras Y](https://drive.google.com/file/d/1E-aBhAE2Ay6UbmGfmZbyHL0f8PhmT-Nc/view). [Registro BOOT](https://drive.google.com/file/d/14nbdlnNMpc0Xe6iJy-2hKgiHkxphaPWq/view).
+
+El teclado Y y el flujo de UI System3 están **verificados**; **aún no se ha pulsado Enter**, ni acreditado que AlphaWord haya aparecido como editor. Siguiente comprobación dirigida: Enter y reinicio sobre NVRAM de pruebas, conservando los dos medios BOOT/WRITER y el único ejecutable. NO forzar PC ni tocar Flash original.

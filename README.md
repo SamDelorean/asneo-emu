@@ -1,3 +1,5 @@
+**Estado vigente R6 (2026-11-14):** un solo `neo-diag` compilado y verificado en T640, dos ROM privadas BOOT/WRITER con mapeo físico corregido; System 3 ejecuta UI real y acepta la tecla Y. El sistema solicita Enter para reiniciar; AlphaWord todavía no acreditado. [Evidencias R6](docs/R6_FLASH_SEGMENT_ALIGNMENT_20261114.md). La nota histórica R0 siguiente no describe el estado vigente.
+
 # asneo-emu — AlphaSmart NEO / NEO2 MAME emulator
 
 **Estado R0 (2026-11-14): código inicial publicado; pruebas C++ independientes PASS en contenedor local, compilación MAME y ejecución de firmware pendientes.** Este repositorio es el **único** destino de integración NEO. Nada de imágenes de pantalla simuladas, ROMs propietarias, tramas USB inventadas o emuladores paralelos.
