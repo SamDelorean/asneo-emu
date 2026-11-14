@@ -498,12 +498,12 @@ ROM_END
 // The ROMs are constructed outside Git from manufacturer NEO firmware.
 ROM_START(asneob)
     ROM_REGION(0x400000,"flashrom",0)
-    ROM_LOAD("OS3K_NEO_MIN_BOOT.bin",0,0x400000,
+    ROM_LOAD("os3k_neo_min_boot.bin",0,0x400000,
         CRC(0bb36e55) SHA1(5930ee13122d26d690748206407baeec5e33be06))
 ROM_END
 ROM_START(asneow)
     ROM_REGION(0x400000,"flashrom",0)
-    ROM_LOAD("OS3K_NEO_MIN_WRITER.bin",0,0x400000,
+    ROM_LOAD("os3k_neo_min_writer.bin",0,0x400000,
         CRC(080b51c3) SHA1(7bf9476ff6eb3384da05cacea8bb20a641043c3a))
 ROM_END
 } // anonymous namespace
