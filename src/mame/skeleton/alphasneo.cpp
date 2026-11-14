@@ -109,12 +109,25 @@ void alphasneo_state::machine_start() {
     m_clk32_timer=timer_alloc(FUNC(alphasneo_state::clk32_tick),this);
     m_compare_timers[0]=timer_alloc(FUNC(alphasneo_state::timer1_compare),this);
     m_compare_timers[1]=timer_alloc(FUNC(alphasneo_state::timer2_compare),this);
-    auto *small=memregion("smallrom");
-    auto *system=memregion("system");
     std::string error;
-    m_firmware_valid=neo::firmware::install_small(small->base(),small->bytes(),m_flash_seed,error);
-    if(m_firmware_valid)
-        m_firmware_valid=neo::firmware::install_system(system->base(),system->bytes(),m_flash_seed,error);
+    // Single NEO driver, interchangeable private ROM sets. The original
+    // asneo set still imports the two authentic update packages. BOOT/WRITER
+    // sets load an assembled 4 MiB virtual NOR image, never a physical dump.
+    if (auto *image=memregion("flashrom")) {
+        m_firmware_valid=(image->bytes()==m_flash_seed.size() &&
+            neo::firmware::be32(image->base())==0x0007fff0 &&
+            neo::firmware::be32(image->base()+4)==0x0040042a);
+        if(m_firmware_valid)
+            std::copy_n(image->base(),image->bytes(),m_flash_seed.begin());
+        else error="Invalid NEO full-flash test image size or reset vectors";
+    } else {
+        auto *small=memregion("smallrom");
+        auto *system=memregion("system");
+        m_firmware_valid=(small && system &&
+            neo::firmware::install_small(small->base(),small->bytes(),m_flash_seed,error));
+        if(m_firmware_valid)
+            m_firmware_valid=neo::firmware::install_system(system->base(),system->bytes(),m_flash_seed,error);
+    }
     if(!m_firmware_valid) {
         logerror("NEO_FIRMWARE_IMPORT_FAIL %s\n",error.c_str());
         // No fake reset vector or fabricated successful OS boot.
@@ -478,7 +491,26 @@ ROM_START(asneo)
     ROM_REGION(0x60800,"system",0)
     ROM_LOAD("os3kneorom.os3kos",0,0x60800,"")
 ROM_END
+
+// These are private *data* variants, not emulator variants or new hardware.
+// The ROMs are constructed outside Git from manufacturer NEO firmware.
+ROM_START(asneob)
+    ROM_REGION(0x400000,"flashrom",0)
+    ROM_LOAD("OS3K_NEO_MIN_BOOT.bin",0,0x400000,
+        CRC(0bb36e55) SHA1(5930ee13122d26d690748206407baeec5e33be06))
+ROM_END
+ROM_START(asneow)
+    ROM_REGION(0x400000,"flashrom",0)
+    ROM_LOAD("OS3K_NEO_MIN_WRITER.bin",0,0x400000,
+        CRC(080b51c3) SHA1(7bf9476ff6eb3384da05cacea8bb20a641043c3a))
+ROM_END
 } // anonymous namespace
 COMP(2004,asneo,0,0,asneo,asneo,alphasneo_state,empty_init,
-     "AlphaSmart","AlphaSmart NEO (hardware-boot scaffold)",
+     "AlphaSmart","AlphaSmart NEO (original update packages)",
+     MACHINE_NOT_WORKING | MACHINE_NO_SOUND_HW)
+COMP(2004,asneob,asneo,0,asneo,asneo,alphasneo_state,empty_init,
+     "AlphaSmart","AlphaSmart NEO (minimal BOOT virtual NOR)",
+     MACHINE_NOT_WORKING | MACHINE_NO_SOUND_HW)
+COMP(2004,asneow,asneo,0,asneo,asneo,alphasneo_state,empty_init,
+     "AlphaSmart","AlphaSmart NEO (minimal WRITER virtual NOR)",
      MACHINE_NOT_WORKING | MACHINE_NO_SOUND_HW)

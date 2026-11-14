@@ -33,3 +33,5 @@ Las imágenes privadas `smallos3kneorom.os3kos` (22554 bytes) y `os3kneorom.os3k
 ## ROM mínima privada de prueba
 
 La variante BOOT de 4 MiB está en `/home/spc/Projects/alphasmart/private/roms/neo/os3k_minimal/OS3K_NEO_MIN_BOOT.bin` y en Drive privado. Para procedencia, hashes, pruebas y distinción entre imagen ensamblada y boot ejecutado, ver [R3_NEO_MIN_BOOT_ROM_20261114.md](docs/R3_NEO_MIN_BOOT_ROM_20261114.md). No se distribuyen ROMs por GitHub.
+
+La carga de las dos ROM privadas BOOT/WRITER se realiza desde el **mismo ejecutable `neo-diag`**, con los sets `asneob` y `asneow` y un único driver; consultar [NEO_DIAG_ROM_VARIANTS.md](docs/NEO_DIAG_ROM_VARIANTS.md). No publicar imágenes privadas en Git.
