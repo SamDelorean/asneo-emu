@@ -29,3 +29,7 @@ c++ -std=c++17 -Wall -Wextra -pedantic -Isrc/mame/skeleton tests/neo_components.
 Trabajar con el **MAME canónico autorizado**, incorporando este driver y cabeceras en `src/mame/skeleton`, sin crear un fork/tree/binario alternativo. Una vez esté autorizado el uso de la máquina compiladora, comprobar el target de MAME y compilar una sola variante `neo-diag`; no afirmar que el comando es válido para una versión distinta sin verificar sus scripts de build. Copiar ROMs sólo al directorio privado esperado por MAME, jamás al Git público.
 
 Las imágenes privadas `smallos3kneorom.os3kos` (22554 bytes) y `os3kneorom.os3kos` (395264 bytes) se ensamblan en la ventana Flash simulada según las tablas de segmentos del paquete, **no** se consideran dumps Flash físicos completos.
+
+## ROM mínima privada de prueba
+
+La variante BOOT de 4 MiB está en `/home/spc/Projects/alphasmart/private/roms/neo/os3k_minimal/OS3K_NEO_MIN_BOOT.bin` y en Drive privado. Para procedencia, hashes, pruebas y distinción entre imagen ensamblada y boot ejecutado, ver [R3_NEO_MIN_BOOT_ROM_20261114.md](docs/R3_NEO_MIN_BOOT_ROM_20261114.md). No se distribuyen ROMs por GitHub.
