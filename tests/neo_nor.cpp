@@ -72,6 +72,10 @@ int main(){
     flash.attach(medium.data(),medium.size());
     flash.select_profile(neo::nor_flash::profile::m29w320eb);
     assert(medium==saved);
+    // Program data 0x00F0 must not be mistaken for a reset command.
+    seq(0xa0);
+    assert(flash.write_word(0x38000,0x00f0));
+    assert(flash.read_word(0x38000)==0x00f0);
     // Chip erase requires full six-step sequence, not an arbitrary 0x10.
     assert(!flash.write_word(0xaaa,0x10));
     assert(flash.read_word(0x20000)==0x0055);
@@ -86,4 +90,11 @@ int main(){
     assert(flash.write_word(0x1234,0x90));
     assert(flash.write_word(0x1234,0x00));
     assert(flash.current_state()==neo::nor_flash::state::array);
+    // The AMD chip erase sixth write is 0x10 at unlock word 0x555.
+    seq(0x80); // arm erase
+    assert(flash.write_word(0xaaa,0xaa));
+    assert(flash.write_word(0x554,0x55));
+    assert(flash.write_word(0xaaa,0x10));
+    assert(flash.read_word(0x30000)==0xffff);
+    assert(flash.read_word(0x38000)==0xffff);
 }

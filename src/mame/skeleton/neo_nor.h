@@ -56,7 +56,9 @@ public:
         const std::size_t wa=byte_offset/2;
         const std::size_t cmd_addr=wa&0x7ff; // A0–A10 for unlock decode
         const bool unlock1=cmd_addr==0x555,unlock2=cmd_addr==0x2aa;
-        if(value==0x00f0){m_state=state::array;return true;}
+        // In a pending program cycle 0x00F0 is data, not a reset command.
+        if(value==0x00f0 && m_state!=state::program &&
+           m_state!=state::bypass_program){m_state=state::array;return true;}
         switch(m_state) {
         case state::array:
             if(unlock1 && value==0x00aa){m_state=state::unlock2;return true;}

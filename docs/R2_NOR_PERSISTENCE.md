@@ -20,3 +20,8 @@
 - **NO** se ha acreditado compilación del driver contra MAME, carga de firmware original ni persistencia nativa de MAME; sólo se ensayan pruebas C++ independientes.
 - NVRAM de MAME guarda bytes por dispositivo. Los estados transitorios de comandos NOR y los snapshots completos de MAME aún requieren revisión.
 - No se usaron T/Commander ni Ghidra ni el ROM original privado.
+
+## CI ejecutado y casos complementarios
+- Primer pase de R2 `609f9f1`: fallo bajo `-Werror` por variable sin uso, corregido sin cambios de comportamiento en `1f3c554`.
+- Ejecución `43620758227` en `1f3c55436c424ac6e375a7094b4a3c780173d429`: **PASS** en GCC y Clang. https://github.com/SamDelorean/asneo-emu/actions/runs/43620758227
+- Se agregaron pruebas nuevas de programación de dato 0x00F0 y borrado completo auténtico (secuencia de seis escrituras), pendientes de ejecutar en el siguiente workflow.
