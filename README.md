@@ -1,6 +1,6 @@
 # asneo-emu — AlphaSmart NEO / NEO2 MAME emulator
 
-**Estado R0 (2026-11-14): código inicial publicado; pruebas locales y ejecución de firmware en MAME pendientes.** Este repositorio es el **único** destino de integración NEO. Nada de imágenes de pantalla simuladas, ROMs propietarias, tramas USB inventadas o emuladores paralelos.
+**Estado R0 (2026-11-14): código inicial publicado; pruebas C++ independientes PASS en contenedor local, compilación MAME y ejecución de firmware pendientes.** Este repositorio es el **único** destino de integración NEO. Nada de imágenes de pantalla simuladas, ROMs propietarias, tramas USB inventadas o emuladores paralelos.
 
 ## Código presente
 - `src/mame/skeleton/alphasneo.cpp`: driver MAME inicial, bus M68000 de 32 bits adaptado de nuestro DANA-emu, apertura de RAM y Flash NEO, composición de paquetes SmallROM y System Neo, matriz física de teclado, dos controladores LCD y reporte explícito de registros sin implementar.
@@ -19,7 +19,7 @@ CPU carrier: `SamDelorean/DANA-emu/src/mame/skeleton/alphasdana.cpp`, licencia B
 c++ -std=c++17 -Wall -Wextra -pedantic -Isrc/mame/skeleton tests/neo_components.cpp -o /tmp/neo_components
 /tmp/neo_components
 ```
-La comprobación anterior prueba lógica C++ autocontenida; **no verifica la compilación ni el arranque MAME**.
+**Resultado observado (14-nov-2026): PASS local**, compilado con g++ 14.2.0, exit 0; se verificaron las identidades Git SHA de las 3 cabeceras y el test contra los blobs publicados en GitHub. Sólo prueba lógica C++ autocontenida; **no verifica compilación ni arranque MAME**. Ver `docs/R0_IMPLEMENTATION_STATUS.md`.
 
 ## Integración MAME existente
 Trabajar con el **MAME canónico autorizado**, incorporando este driver y cabeceras en `src/mame/skeleton`, sin crear un fork/tree/binario alternativo. Una vez esté autorizado el uso de la máquina compiladora, comprobar el target de MAME y compilar una sola variante `asneo-diag`; no afirmar que el comando es válido para una versión distinta sin verificar sus scripts de build. Copiar ROMs sólo al directorio privado esperado por MAME, jamás al Git público.
