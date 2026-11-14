@@ -2,7 +2,7 @@
 Fecha: 2026-11-14. Alcance: TODO el repositorio `SamDelorean/asneo-emu`. Autoridad: instrucciones del usuario; cualquier instrucción más reciente y explícita prevalece.
 
 ## Objetivo único
-Construir un **solo emulador minimalista AlphaSmart NEO / NEO2** sobre **MAME** con ejecución genuina de SmallROM, System 3 y SmartApplets, aprovechando al máximo código comprobado de **DANA-emu, mame-as3k, AS2K-Emulator, ASPRO-emu, isotherm/mame y ioma8/neo-re**. Binario de trabajo previsto: `asneo-diag`. No crear emuladores alternativos ni un segundo motor de CPU, pantallas sintéticas o shims que reemplacen permanentemente servicios del firmware.
+Construir un **solo emulador minimalista AlphaSmart NEO / NEO2** sobre **MAME** con ejecución genuina de SmallROM, System 3 y SmartApplets, aprovechando al máximo código comprobado de **DANA-emu, mame-as3k, AS2K-Emulator, ASPRO-emu, isotherm/mame y ioma8/neo-re**. Binario de trabajo previsto: `neo-diag`. No crear emuladores alternativos ni un segundo motor de CPU, pantallas sintéticas o shims que reemplacen permanentemente servicios del firmware.
 
 ## Antes de cambiar código: lectura y comparación obligatoria
 1. Leer este archivo y `docs/REUSE_MATRIX.md`; comprobar el estado y commit efectivo del repositorio NEO y de cada origen, en vez de asumir versiones anteriores.
@@ -24,7 +24,7 @@ Construir un **solo emulador minimalista AlphaSmart NEO / NEO2** sobre **MAME** 
 - NEO teclado 16×8 y selectores reales; conservar la semántica de GPIO y lectura activa-baja. No sustituir por inyección de texto.
 - No copiar indiscriminadamente el driver completo de Dana: el hardware compartido se adapta; SD, pantalla táctil, ST keyboard, puertos y placa Dana NO son periféricos NEO por defecto.
 - Firmware hace el trabajo: no fingir llamadas A-line ni inventar contenido de archivos. Las validaciones de Rust `neo-re` son oráculo de observación, no reemplazo de SO.
-- Un solo árbol, una rama principal de trabajo y un binario operativo `asneo-diag`; evitar clones, worktrees, forks y ramas aisladas injustificadas. Conservar todo lo ya cerrado.
+- Un solo árbol, una rama principal de trabajo y un binario operativo `neo-diag`; evitar clones, worktrees, forks y ramas aisladas injustificadas. Conservar todo lo ya cerrado.
 - Proteger ROMs originales, datos personales, dispositivos, archivos de estado y evidencia privada. Nunca subir ROMs/SmartApplets propietarios ni grandes volcados de Ghidra a GitHub público. Referenciar con hashes y ubicaciones privadas.
 
 ## Metodología T / Drive / Commander

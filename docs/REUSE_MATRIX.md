@@ -1,7 +1,7 @@
 # Matriz de reutilización comprobada — NEO MAME R0 (2026-11-14)
 
 ## Criterio general
-No se implementa hardware sin **fuente existente, evidencia del NEO y prueba dirigida**. El destino es `SamDelorean/asneo-emu` (MAME, un único driver y un binario `asneo-diag`). Esta matriz es documental: **no equivale a pruebas compiladas/ejecutadas en T**. Los nombres de fuentes y valores deben verificarse nuevamente contra los commits exactos al importarlos.
+No se implementa hardware sin **fuente existente, evidencia del NEO y prueba dirigida**. El destino es `SamDelorean/asneo-emu` (MAME, un único driver y un binario `neo-diag`). Esta matriz es documental: **no equivale a pruebas compiladas/ejecutadas en T**. Los nombres de fuentes y valores deben verificarse nuevamente contra los commits exactos al importarlos.
 
 | Subsistema | Fuente previa prioritaria | Estado de partida observado | Diferencia clave / acción mínima | Validación obligatoria |
 |---|---|---|---|---|
