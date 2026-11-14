@@ -4,7 +4,8 @@
 // CPU address-width technique reuses SamDelorean/DANA-emu; segmented firmware,
 // keyboard and LCD protocols are cross-checked against ioma8/neo-re.
 //
-// Important: VZ PLL/RTC/IRQ/NOR CFI/USB have NOT been transplanted yet.
+// VZ PLL/RTC/Timer1/2/IRQ core is adapted from Dana. NOR CFI, USB and physical
+// low-power timing are still pending calibration on NEO firmware.
 // Unsupported operations are logged; this driver is MACHINE_NOT_WORKING.
 // No invented boot screens, no OS trap shims, no Dana-specific peripherals.
 #include "emu.h"
@@ -15,6 +16,7 @@
 #include "neo_firmware.h"
 #include "neo_keyboard.h"
 #include "neo_lcd.h"
+#include "neo_vz_core.h"
 
 #include <algorithm>
 #include <array>
@@ -53,6 +55,18 @@ private:
     std::vector<u8> m_sram, m_flash;
     neo::keyboard m_keyboard;
     neo::lcd m_lcd;
+    neo::vz_core m_vz;
+    emu_timer *m_clk32_timer=nullptr;
+    std::array<emu_timer *,2> m_compare_timers{};
+    void update_vz_irq();
+    void update_vz_clock();
+    u16 timer_count(unsigned n) const;
+    void timer_schedule(unsigned n);
+    TIMER_CALLBACK_MEMBER(clk32_tick);
+    TIMER_CALLBACK_MEMBER(timer1_compare);
+    TIMER_CALLBACK_MEMBER(timer2_compare);
+    void cpu_space_map(address_map &map) ATTR_COLD;
+    u8 irq_vector_r(offs_t offset);
     std::array<u8,4096> m_registers{}; // currently known GPIO latch values only
     bool m_firmware_valid=false;
     void mem_map(address_map &map) ATTR_COLD;
@@ -77,6 +91,9 @@ void alphasneo_state::machine_start() {
     m_sram.assign(0x80000,0);
     m_flash.assign(0x200000,0xff);
     m_registers.fill(0);
+    m_clk32_timer=timer_alloc(FUNC(alphasneo_state::clk32_tick),this);
+    m_compare_timers[0]=timer_alloc(FUNC(alphasneo_state::timer1_compare),this);
+    m_compare_timers[1]=timer_alloc(FUNC(alphasneo_state::timer2_compare),this);
     const auto *small=memregion("smallrom");
     const auto *system=memregion("system");
     std::string error;
@@ -94,17 +111,84 @@ void alphasneo_state::machine_start() {
 void alphasneo_state::machine_reset() {
     if(!m_firmware_valid)return;
     m_keyboard.reset();m_lcd.reset();m_registers.fill(0);
+    m_vz.reset();
+    system_time host;machine().current_datetime(host);
+    const auto &now=host.local_time;
+    m_vz.seed_rtc(now.hour,now.minute,now.second);
+    m_cpu->set_unscaled_clock(m_vz.sysclk_hz());
+    for(auto &t:m_compare_timers)t->adjust(attotime::never);
+    m_clk32_timer->adjust(attotime::from_hz(neo::vz_core::xtal_hz),0,
+        attotime::from_hz(neo::vz_core::xtal_hz));
+    update_vz_irq();
     // SmallROM mirror is needed for the actual 68k reset vector fetch.
     std::copy_n(m_flash.begin(),0x100,m_sram.begin());
+}
+// MAME virtual timing and IRQ inputs: extracted from the qualified Dana VZ
+// implementation. All unmodeled board pins remain disconnected.
+void alphasneo_state::update_vz_irq() {
+    for(unsigned level=1;level<=6;++level)
+        m_cpu->set_input_line(level,m_vz.irq_at_level(level)?ASSERT_LINE:CLEAR_LINE);
+}
+void alphasneo_state::update_vz_clock() {
+    const u32 hz=m_vz.sysclk_hz();
+    if(hz)m_cpu->set_unscaled_clock(hz);
+    for(unsigned n=0;n<2;++n)timer_schedule(n);
+}
+u16 alphasneo_state::timer_count(unsigned n) const {
+    auto const &t=m_vz.timer_state(n);
+    u32 hz=m_vz.timer_source_hz(n);
+    if(!(t.ctl&1)||!hz||!m_compare_timers[n]->enabled())return t.cnt;
+    u64 delta=m_compare_timers[n]->elapsed().as_ticks(hz)/u64(t.prer+1);
+    return u16((u64(t.cnt)+delta)&0xffff);
+}
+void alphasneo_state::timer_schedule(unsigned n) {
+    const auto &t=m_vz.timer_state(n);
+    u32 hz=m_vz.timer_source_hz(n);
+    if(!(t.ctl&1)||!hz||!t.cmp) {
+        m_compare_timers[n]->adjust(attotime::never);
+        return;
+    }
+    u32 remaining=(u32(t.cmp)-u32(t.cnt))&0xffff;
+    if(!remaining)remaining=65536;
+    m_compare_timers[n]->adjust(attotime::from_ticks(u64(t.prer+1)*remaining,hz));
+}
+TIMER_CALLBACK_MEMBER(alphasneo_state::timer1_compare) {
+    m_vz.compare(0);update_vz_irq();timer_schedule(0);
+}
+TIMER_CALLBACK_MEMBER(alphasneo_state::timer2_compare) {
+    m_vz.compare(1);update_vz_irq();timer_schedule(1);
+}
+TIMER_CALLBACK_MEMBER(alphasneo_state::clk32_tick) {
+    m_vz.advance_clk32();
+    if(m_vz.watchdog_trip()) {
+        logerror("NEO_VZ_WATCHDOG_RESET_REQUEST (reset action not yet hardware-qualified)\n");
+        m_vz.clear_watchdog_trip();
+    }
+    update_vz_irq();
+}
+u8 alphasneo_state::irq_vector_r(offs_t offset) {
+    return m_vz.irq_vector(offset&7);
+}
+void alphasneo_state::cpu_space_map(address_map &map) {
+    map(0xfffffff0,0xffffffff).r(FUNC(alphasneo_state::irq_vector_r)).umask16(0x00ff);
 }
 u8 alphasneo_state::vz_read8(u16 r) {
     if(r==0xf419) {
         for(unsigned i=0;i<16;++i)m_keyboard.set_row(i,m_rows[i]->read());
         return m_keyboard.columns();
     }
-    // Only verified board observation: bit 5 of F449 is set in neo-re.
     if(r==0xf449)return m_registers[r&0xfff]|0x20;
     if(r==0xf410 || r==0xf408 || r==0xf440)return m_registers[r&0xfff];
+    if(r==0xf608||r==0xf609) {
+        auto value=timer_count(0);
+        return r&1?u8(value):u8(value>>8);
+    }
+    if(r==0xf618||r==0xf619) {
+        auto value=timer_count(1);
+        return r&1?u8(value):u8(value>>8);
+    }
+    if(auto value=m_vz.read_word(r&u16(0xfffe)))
+        return (r&1)?u8(*value):u8(*value>>8);
     logerror("NEO_VZ_UNIMPLEMENTED_READ %04x\n",r);
     return 0xff;
 }
@@ -114,7 +198,24 @@ void alphasneo_state::vz_write8(u16 r,u8 value) {
         m_keyboard.gpio_write(r,value);
         return;
     }
-    logerror("NEO_VZ_UNIMPLEMENTED_WRITE %04x=%02x\n",r,value);
+    const u16 aligned=r&u16(0xfffe);
+    if((aligned>=0xf600 && aligned<=0xf61a) &&
+       ((aligned>=0xf600 && aligned<=0xf60a)||(aligned>=0xf610 && aligned<=0xf61a))) {
+        unsigned n=aligned<0xf610?0:1;
+        if(m_vz.timer_state(n).ctl&1)m_vz.timer_state(n).cnt=timer_count(n);
+    }
+    const u32 before=m_vz.sysclk_hz();
+    const u16 mask=(r&1)?0x00ff:0xff00;
+    const u16 data=(r&1)?value:u16(value)<<8;
+    if(!m_vz.write_word(aligned,data,mask)) {
+        logerror("NEO_VZ_UNIMPLEMENTED_WRITE %04x=%02x\n",r,value);
+        return;
+    }
+    if(before!=m_vz.sysclk_hz())update_vz_clock();
+    else if((aligned>=0xf600&&aligned<=0xf60a)||
+            (aligned>=0xf610&&aligned<=0xf61a))
+        timer_schedule(aligned<0xf610?0:1);
+    update_vz_irq();
 }
 u16 alphasneo_state::vz_r(offs_t offset,u16 mask) {
     u16 r=0xf000+(offset<<1);
@@ -172,7 +273,7 @@ void alphasneo_state::mem_map(address_map &map) {
     map(0x01000000,0x01000001).rw(FUNC(alphasneo_state::lcd_right_r),FUNC(alphasneo_state::lcd_right_w));
     map(0x01008000,0x01008001).rw(FUNC(alphasneo_state::lcd_left_r),FUNC(alphasneo_state::lcd_left_w));
     map(0xfffff000,0xffffffff).rw(FUNC(alphasneo_state::vz_r),FUNC(alphasneo_state::vz_w));
-    // ASIC 0x02000000 and VZ IRQ/RTC are not implemented; no fabricated data.
+    // ASIC 0x02000000, NOR CFI and external IRQ GPIO are still unmodeled.
 }
 static INPUT_PORTS_START( asneo )
     PORT_START("ROW0")
@@ -325,6 +426,7 @@ void alphasneo_state::asneo(machine_config &cfg) {
     // 33 MHz is the current neo-re timing reference, not physically certified.
     NEO_VZ_CPU(cfg,m_cpu,33'000'000);
     m_cpu->set_addrmap(AS_PROGRAM,&alphasneo_state::mem_map);
+    m_cpu->set_addrmap(AS_CPU_SPACE,&alphasneo_state::cpu_space_map);
     screen_device &screen(SCREEN(cfg,"screen",SCREEN_TYPE_LCD));
     screen.set_refresh_hz(60);
     screen.set_size(neo::lcd::width,neo::lcd::height);

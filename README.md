@@ -6,13 +6,14 @@
 - `src/mame/skeleton/alphasneo.cpp`: driver MAME inicial, bus M68000 de 32 bits adaptado de nuestro DANA-emu, apertura de RAM y Flash NEO, composición de paquetes SmallROM y System Neo, matriz física de teclado, dos controladores LCD y reporte explícito de registros sin implementar.
 - `src/mame/skeleton/neo_firmware.h`: parser C++ de segmentos de actualizador System 3 Neo con validación completa antes de escribir en Flash y validación de vectores SmallROM.
 - `src/mame/skeleton/neo_keyboard.h`: filas y columnas GPIO con tabla lógica derivada de la ingeniería inversa real del NEO.
+- `src/mame/skeleton/neo_vz_core.h`: adaptación de reloj, Timer1/2, RTC e interrupciones VZ desde las rutinas calificadas de Dana; conexión MMIO y temporizadores MAME documentada en `docs/R1_VZ_INTEGRATION.md`.
 - `src/mame/skeleton/neo_lcd.h`: dispositivo C++ gráfico 264×64 visible, dos controladores, comandos por páginas, lectura/escritura, scrolling y RMW.
 - `tests/neo_components.cpp`: pruebas independientes sin firmware privado.
 
 ## Proveniencia y límites
 CPU carrier: `SamDelorean/DANA-emu/src/mame/skeleton/alphasdana.cpp`, licencia BSD-3-Clause. Protocolo LCD/teclado y estructura de actualizador: `ioma8/neo-re/alpha-emu/src/{lcd,keyboard,firmware,memory}.rs`; comportamiento reimplementado en C++ sin copiar su código. Patrones de imagen MAME: `isotherm/mame`, rama `alphasmart`. Ver `docs/REUSE_MATRIX.md`, `docs/R0_IMPLEMENTATION_STATUS.md`, `AGENTS.md`.
 
-**NO CALIFICADO:** SoC VZ completo (PLL/RTC/IRQ/timers), NOR CFI y persistencia, ASIC, teclado físico integral, USB/IR/impresión, arranque SmallROM y OS, interfaz NEO2 y compilación MAME. El driver conserva `MACHINE_NOT_WORKING`. El código *no* inventa una pantalla de bienvenida ni transforma OS3K en un programa host.
+**NO CALIFICADO:** Boot NEO MAME, integración completa del SoC VZ (PLL/RTC/IRQ/timers incorporados pero no comprobados en MAME), NOR CFI y persistencia, ASIC, teclado físico integral, USB/IR/impresión, arranque SmallROM y OS, interfaz NEO2 y compilación MAME. El driver conserva `MACHINE_NOT_WORKING`. El código *no* inventa una pantalla de bienvenida ni transforma OS3K en un programa host.
 
 ## Prueba independiente de componentes
 ```sh
