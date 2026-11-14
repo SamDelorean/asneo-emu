@@ -56,7 +56,6 @@ public:
         const std::size_t wa=byte_offset/2;
         const std::size_t cmd_addr=wa&0x7ff; // A0–A10 for unlock decode
         const bool unlock1=cmd_addr==0x555,unlock2=cmd_addr==0x2aa;
-        const std::uint8_t cmd=std::uint8_t(value);
         if(value==0x00f0){m_state=state::array;return true;}
         switch(m_state) {
         case state::array:
