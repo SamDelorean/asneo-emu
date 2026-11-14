@@ -529,12 +529,12 @@ ROM_END
 ROM_START(asneob)
     ROM_REGION(0x400000,"flashrom",0)
     ROM_LOAD("os3k_neo_min_boot.bin",0,0x400000,
-        CRC(0bb36e55) SHA1(5930ee13122d26d690748206407baeec5e33be06))
+        CRC(7321c03f) SHA1(8b556e1dda4588b9380fbf895ece11c52c7f18f8))
 ROM_END
 ROM_START(asneow)
     ROM_REGION(0x400000,"flashrom",0)
     ROM_LOAD("os3k_neo_min_writer.bin",0,0x400000,
-        CRC(080b51c3) SHA1(7bf9476ff6eb3384da05cacea8bb20a641043c3a))
+        CRC(7099ffa9) SHA1(334b867183acf6f537823ddd4aa6743fe3d2dd8e))
 ROM_END
 } // anonymous namespace
 COMP(2004,asneo,0,0,asneo,asneo,alphasneo_state,empty_init,

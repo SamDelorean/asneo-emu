@@ -41,13 +41,29 @@ int main() {
     std::string err;
     assert(neo::firmware::install_small(small.data(),small.size(),flash,err));
     assert(flash[0]==0x00 && flash[4]==0x00 && flash[6]==0x04);
-    std::vector<std::uint8_t> os(0x80,0);
+    // R6: complete source packet, including header, is transferred in
+    // 1 KiB chunks. The second descriptor's nominal 0x14 bytes still occupy
+    // a physical 0x400-byte transfer; do not shift the next segment.
+    std::vector<std::uint8_t> os(0xc00,0);
     std::memcpy(os.data()+6,"System 3 Neo      ",18);
-    be32(os,0x50,0x00410000);be32(os,0x54,0x10);
-    for(unsigned i=0;i<0x10;++i)os[0x70+i]=i;
+    be32(os,0x50,0x00410000);be32(os,0x54,0x400);
+    be32(os,0x58,0x00406000);be32(os,0x5c,0x14);
+    be32(os,0x60,0x005ffc00);be32(os,0x64,0x400);
+    os[0x70]=0x5a;
+    os[0x400]=0x53;os[0x413]=0x54;os[0x7ff]=0x3c;
+    os[0x800]=0x91;os[0xbff]=0xa9;
+    std::vector<neo::firmware::segment> segments;
+    assert(neo::firmware::parse_system(os.data(),os.size(),segments,err));
+    assert(segments.size()==3);
+    assert(segments[0].offset==0 && segments[0].transfer_size==0x400);
+    assert(segments[1].offset==0x400 && segments[1].size==0x14 &&
+           segments[1].transfer_size==0x400);
+    assert(segments[2].offset==0x800 && segments[2].transfer_size==0x400);
     assert(neo::firmware::install_system(os.data(),os.size(),flash,err));
-    assert(flash[0x10000]==0 && flash[0x1000f]==15);
-    os[0x50]=0x20;
+    assert(flash[0x10000]==os[0] && flash[0x10070]==0x5a);
+    assert(flash[0x6000]==0x53 && flash[0x6013]==0x54 && flash[0x63ff]==0x3c);
+    assert(flash[0x1ffc00]==0x91 && flash[0x1fffff]==0xa9);
+    os[0x50]=0x20; // invalid destination: no partial image writes
     assert(!neo::firmware::install_system(os.data(),os.size(),flash,err));
-    assert(flash[0x1000f]==15); // failed installs cannot partially modify Flash
+    assert(flash[0x1fffff]==0xa9);
 }
