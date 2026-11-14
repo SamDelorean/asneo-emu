@@ -75,3 +75,7 @@ El ensamblador de firmware se corrigió al mapa real de bloques de 0x400 bytes; 
 
 ## R6 — Confirmación Y y Enter
 Teclas verificadas: Y `ROW15/0x01` y Enter `ROW9/0x40`. En ambas ROM el mensaje de batería desaparece y después de Enter se muestra **Updater Mode**, no el escritorio ni Writer. La secuencia de entrada pasó, pero el reinicio normal/AlphaWord sigue **NO ACREDITADO**. [Detalles y evidencia](R6_FLASH_SEGMENT_ALIGNMENT_20261114.md).
+
+
+## R7 — Updater Mode es fallo de WRITER
+Una vez contestado Y y Enter, el NEO correctamente inicializado debe permitir entrar al editor. El `Updater Mode` observado en ambas variantes **no es PASS de WRITER**. Análisis dirigido R7: `0x00000E0A=0x00449602` registra System, pero `0x00000E0E=0` y los demás slots1–31 también; AlphaWord está físicamente en Flash pero no aparece en la tabla runtime. Cambiar el perfil NOR no corrige el problema. [Ver bitácora R7](R7_STARTUP_APPLET_REGISTRY_20261114.md).
