@@ -18,6 +18,7 @@
 #include "neo_keyboard.h"
 #include "neo_lcd.h"
 #include "neo_vz_core.h"
+#include "neo_vz_uart.h"
 #include "neo_nor.h"
 #include "machine/nvram.h"
 
@@ -42,6 +43,7 @@ public:
     }
 };
 DEFINE_DEVICE_TYPE(NEO_VZ_CPU,neo_vz_cpu_device,"neo_vz_cpu","AlphaSmart NEO VZ bus")
+DEFINE_DEVICE_TYPE(NEO_VZ_UART,neo_vz_uart_device,"neo_vz_uart","MC68VZ328 UART (NEO)")
 
 namespace {
 class alphasneo_state : public driver_device {
@@ -49,6 +51,7 @@ public:
     alphasneo_state(const machine_config &cfg,device_type type,const char *tag)
         :driver_device(cfg,type,tag),m_cpu(*this,"maincpu"),
          m_rows(*this,"ROW%u",0U),m_nor_config(*this,"NOR_PROFILE"),
+          m_uart(*this,"uart%u",0U),
          m_flash_nvram(*this,"flashnv"),m_ram_nvram(*this,"ramnv") {}
     void asneo(machine_config &cfg);
 protected:
@@ -56,6 +59,7 @@ protected:
     virtual void machine_reset() override ATTR_COLD;
 private:
     required_device<neo_vz_cpu_device> m_cpu;
+    required_device_array<neo_vz_uart_device,2> m_uart;
     required_ioport_array<16> m_rows;
     required_ioport m_nor_config;
     required_device<nvram_device> m_flash_nvram;
@@ -70,6 +74,7 @@ private:
     std::array<emu_timer *,2> m_compare_timers{};
     void update_vz_irq();
     void update_vz_clock();
+    void update_serial_clock();
     u16 timer_count(unsigned n) const;
     void timer_schedule(unsigned n);
     TIMER_CALLBACK_MEMBER(clk32_tick);
@@ -151,6 +156,7 @@ void alphasneo_state::machine_reset() {
         neo::nor_flash::profile::m29w320eb:
         neo::nor_flash::profile::unknown_readonly);
     m_vz.reset();
+    update_serial_clock();
     system_time host;machine().current_datetime(host);
     const auto &now=host.local_time;
     m_vz.seed_rtc(now.hour,now.minute,now.second);
@@ -168,9 +174,15 @@ void alphasneo_state::update_vz_irq() {
     for(unsigned level=1;level<=6;++level)
         m_cpu->set_input_line(level,m_vz.irq_at_level(level)?ASSERT_LINE:CLEAR_LINE);
 }
+void alphasneo_state::update_serial_clock() {
+    // VZ internal clock only; unattached NEO serial pins/UCLK are not fabricated.
+    const u32 hz=m_vz.sysclk_hz();
+    for(auto &uart:m_uart)uart->sysclk(hz);
+}
 void alphasneo_state::update_vz_clock() {
     const u32 hz=m_vz.sysclk_hz();
     if(hz)m_cpu->set_unscaled_clock(hz);
+    update_serial_clock();
     for(unsigned n=0;n<2;++n)timer_schedule(n);
 }
 u16 alphasneo_state::timer_count(unsigned n) const {
@@ -258,6 +270,10 @@ void alphasneo_state::vz_write8(u16 r,u8 value) {
 }
 u16 alphasneo_state::vz_r(offs_t offset,u16 mask) {
     u16 r=0xf000+(offset<<1);
+    // Forward the original MAME big-endian bus mask; RX FIFO only pops
+    // on the low lane, per Dana's VZ peripheral implementation.
+    if(r>=0xf900 && r<=0xf90a)return m_uart[0]->read((r-0xf900)>>1,mask);
+    if(r>=0xf910 && r<=0xf91c)return m_uart[1]->read((r-0xf910)>>1,mask);
     u16 result=0xffff;
     if(mask&0xff00)result=(result&0x00ff)|(u16(vz_read8(r))<<8);
     if(mask&0x00ff)result=(result&0xff00)|vz_read8(r+1);
@@ -265,6 +281,8 @@ u16 alphasneo_state::vz_r(offs_t offset,u16 mask) {
 }
 void alphasneo_state::vz_w(offs_t offset,u16 data,u16 mask) {
     u16 r=0xf000+(offset<<1);
+    if(r>=0xf900 && r<=0xf90a) {m_uart[0]->write((r-0xf900)>>1,data,mask);return;}
+    if(r>=0xf910 && r<=0xf91c) {m_uart[1]->write((r-0xf910)>>1,data,mask);return;}
     if(mask&0xff00)vz_write8(r,data>>8);
     if(mask&0x00ff)vz_write8(r+1,data&0xff);
 }
@@ -468,6 +486,18 @@ static INPUT_PORTS_START( asneo )
 INPUT_PORTS_END
 
 void alphasneo_state::asneo(machine_config &cfg) {
+    // Reuse universal VZ UARTs; no Dana serial peer is attached.
+    for(unsigned n=0;n<2;++n) {
+        NEO_VZ_UART(cfg,m_uart[n]);
+        m_uart[n]->channel(n+1);
+        m_uart[n]->irq().set([this,n](int state) {
+            m_vz.set_pending(n?0x00001000U:0x00000004U,bool(state));
+            update_vz_irq();
+        });
+        m_uart[n]->clock_changed().set([this](int) {update_serial_clock();});
+        m_uart[n]->output().set_nop();
+        m_uart[n]->rts().set_nop();
+    }
     // 33 MHz is the current neo-re timing reference, not physically certified.
     NEO_VZ_CPU(cfg,m_cpu,33'000'000);
     m_cpu->set_addrmap(AS_PROGRAM,&alphasneo_state::mem_map);
