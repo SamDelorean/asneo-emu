@@ -63,3 +63,6 @@ Comandos reales del mismo ejecutable:
 ```
 
 Ambos `-verifyroms` con la ruta permanente: **PASS**, un ROM set correcto por variante. [Recibo generado en T](https://drive.google.com/file/d/1V3EBOCYHP0xncNqWrNhBpgHho2E-d4HF/view). Boot real System 3 y funcionamiento del editor siguen **NO ACREDITADOS**.
+
+## Diagnóstico de arranque real R4
+Las dos imágenes ejecutan SmallROM, pero no tienen transición a System 3 acreditada incluso en 24 s simulados. La UART VZ no está integrada en el driver. Evidencia y límites en [R4_BOOT_TRACE_20261114.md](R4_BOOT_TRACE_20261114.md). No confundir la prueba previa de proceso con un sistema operativo funcional.
