@@ -21,3 +21,10 @@
 - Outbox del segundo retry emite status en `BUILD_STARTED` y progreso MAME real (dependencias 3rdparty/flac compilando; advertencias no fatales). No confundir RUNNING con PASS.
 - Uso de Commander sólo para disparo y verificaciones correctivas puntuales; sin polling permanente. Corridas previas preservadas en `failed`/outbox.
 - Referencia de reglas: `AS2K_T640_DCJOB_OPERATING_RULES_20261009.md` en Drive. 
+
+## Corrección nativa RETRY3 — 2026-11-14
+- En el intento RETRY2: `EXIT_CODE=2`; errores nativos exactos: dos punteros `const memory_region` incompatibles con `base()`, y `AS_CPU_SPACE` sin calificador. Fuente real: outbox `NEO_DIAG_NATIVE_R0_20261114_RETRY2.build_tail.txt`.
+- **Corrección en fuente publicada**: commit `70d9bcdfe0b8edb53f0dd37390caf6cf45598b6a`; `auto *small/system` y `m68000_base_device::AS_CPU_SPACE` como en DANA-emu.
+- **RETRY3 despachado** a cola NEO aislada, `NEO_PIN=70d9bcd...`, `STATUS=RUNNING`, `STAGE=BUILD_STARTED`; status de Drive: https://drive.google.com/file/d/1JqxPrNRhoq52QdFqRxBYg1vjnWX_VO3M/view
+- Comprobación puntual después de varios minutos en T: `build.log` ≈ 14667 bytes, compilación real de bibliotecas MAME (`src/lib/util`, `src/osd/modules/render`), sin binario `neo-diag` a ese momento. Evidencia `NEO_DIAG_NATIVE_R0_20261114_RETRY3.build_snapshot.txt` en outbox.
+- **El estado en esta bitácora es RUNNING, no PASS**. No se alteraron los emuladores previos, ni se lanzó un trabajo adicional mientras RETRY3 estaba activo.
