@@ -5,9 +5,10 @@
 // NEVER import Intel M28W640HCB commands from Dana as NEO commands.
 //
 // Scope: x16 word bus, read array, ID, CFI, word-program, block/chip erase,
-// bypass program. NOR timing, DQ toggles, protection pins/blocks and x8 mode
-// require native NEO firmware/PCB qualification. Command completion is
-// currently immediate; runtime storage is owned by MAME NVRAM device.
+// bypass program. NOR timing, DQ toggles, protection pins/blocks and full
+// x8 program/erase remain unqualified. One byte-lane CFI query/exit was
+// proved in NEO 2013 native traces (R8), not generalized to all byte writes.
+// Command completion is immediate; raw storage is owned by MAME NVRAM.
 #pragma once
 #include <cstddef>
 #include <cstdint>
@@ -50,8 +51,28 @@ public:
     // qualified. Reject byte lane commands rather than invent board wiring.
     bool write_word(std::size_t byte_offset,std::uint16_t value,
                     std::uint16_t mem_mask=0xffff) {
-        if(!ready() || (byte_offset&1) || byte_offset+1>=m_size ||
-           mem_mask!=0xffff) return reject();
+        if(!ready() || (byte_offset&1) || byte_offset+1>=m_size)return reject();
+        // Primary NEO 2013 firmware evidence: at PC 0x000004D4, the RAM-
+        // relocated geometry probe issues MOVE.B #0x98,$004000AA with a
+        // high-byte bus strobe (mem_mask=0xff00). At 0x000004DC it reads
+        // QRY byte 0 from $00400021. Allow only this evidenced byte-lane
+        // CFI enter and Reset/Read Array exit for the *selected* ST candidate.
+        // Byte-lane program, erase and unlock remain unqualified/rejected.
+        if(mem_mask!=0xffff) {
+            if(read_only())return reject();
+            const std::uint8_t v=(mem_mask==0xff00)?
+                std::uint8_t(value>>8):std::uint8_t(value);
+            if(m_state==state::array && byte_offset==0x00aa &&
+               mem_mask==0xff00 && v==0x98) {
+                m_state=state::query;return true;
+            }
+            if(m_state==state::query &&
+               (mem_mask==0xff00 || mem_mask==0x00ff) &&
+               v==0xf0) {
+                m_state=state::array;return true;
+            }
+            return reject();
+        }
         if(read_only())return reject();
         const std::size_t wa=byte_offset/2;
         const std::size_t cmd_addr=wa&0x7ff; // A0–A10 for unlock decode

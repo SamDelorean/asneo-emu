@@ -13,6 +13,7 @@ int main(){
     assert(flash.ready());
     assert(flash.read_only());
     assert(!flash.write_word(0xaaa,0x00aa)); // unknown chip is safely read-only
+    assert(!flash.write_word(0x00aa,0x9898,0xff00)); // no invented CFI for unknown chip
     flash.select_profile(neo::nor_flash::profile::m29w320eb);
     assert(!flash.read_only());
     auto seq=[&](std::uint16_t cmd){
@@ -35,6 +36,23 @@ int main(){
     assert(flash.read_word(0x58)==2); // 2 erase regions
     assert(flash.write_word(0,0xf0));
     assert(flash.read_word(0x20)==0xffff);
+    // NEO 2013's actual low-level geometry probe uses byte-wide QRY enter
+    // at even $4000AA (upper byte lane) and reads QRY via odd addresses.
+    // Its 0x9898 word data is a MAME lane-replicated MOVE.B, not a word cmd.
+    assert(flash.write_word(0x00aa,0x9898,0xff00));
+    assert(flash.current_state()==neo::nor_flash::state::query);
+    assert((flash.read_word(0x20)&0x00ff)==0x51);
+    assert((flash.read_word(0x22)&0x00ff)==0x52);
+    assert((flash.read_word(0x24)&0x00ff)==0x59);
+    assert(flash.read_word(0x4e)==0x16); // 4MiB CFI geometry
+    assert(flash.write_word(0x00aa,0xf0f0,0xff00));
+    assert(flash.current_state()==neo::nor_flash::state::array);
+    assert(flash.read_word(0x20)==0xffff);
+    // Do not accidentally broaden permissions to arbitrary byte commands.
+    const auto preserved=flash.read_word(0x10000);
+    assert(!flash.write_word(0x0aaa,0xaaaa,0xff00));
+    assert(!flash.write_word(0x0554,0x5555,0xff00));
+    assert(flash.read_word(0x10000)==preserved);
     // Program a word, enforce NOR one-way clearing (can't set bits to 1).
     seq(0x00a0);
     assert(flash.write_word(0x10000,0x1234));
