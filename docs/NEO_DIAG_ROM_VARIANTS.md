@@ -66,3 +66,6 @@ Ambos `-verifyroms` con la ruta permanente: **PASS**, un ROM set correcto por va
 
 ## Diagnóstico de arranque real R4
 Las dos imágenes ejecutan SmallROM, pero no tienen transición a System 3 acreditada incluso en 24 s simulados. La UART VZ no está integrada en el driver. Evidencia y límites en [R4_BOOT_TRACE_20261114.md](R4_BOOT_TRACE_20261114.md). No confundir la prueba previa de proceso con un sistema operativo funcional.
+
+## R5 UART VZ — Integración nativa cerrada
+La UART universal de Dana ya está incorporada al único `neo-diag` en T con `ROM_AUDIT=PASS`, ejecución de BOOT y WRITER de 24 segundos, y binario SHA256 `98270ba2c257ccbac6a3ca52d7c6c0c6c991ab5fb536d5fc5ba7a4a96d1ca4d6`. Mejoró la progresión dentro de SmallROM (115→235 PC distintos), pero System 3/AlphaWord todavía no presentan arranque visible o PC en sus regiones. Ver [R5_VZ_UART_INTEGRATION_20261114.md](R5_VZ_UART_INTEGRATION_20261114.md).
