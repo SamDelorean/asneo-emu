@@ -26,3 +26,12 @@ g++ -std=c++17 -Wall -Wextra -pedantic -Isrc/mame/skeleton \
     tests/neo_vz_core.cpp -o /tmp/neo_vz_core && /tmp/neo_vz_core
 \`\`\`
 La prueba verifica sólo las invariantes señaladas. El siguiente paso auténtico es ejecutar código de firmware con MMIO capturado en MAME autorizado y resolver diferencias de dirección/timing observadas.
+
+## Resultado automático verificado
+- Workflow: `NEO portable C++ regression` run `43619879964`.
+- Commit ensayado: `8268fbe911f02fbfb68eeff5b9c4223155533398`.
+- Enlace: https://github.com/SamDelorean/asneo-emu/actions/runs/43619879964
+- **GCC C++17 -Werror: PASS** (`components (g++)`).
+- **Clang C++17 -Werror: PASS** (`components (clang++)`).
+- Ambas pruebas ejecutaron `tests/neo_components.cpp` y `tests/neo_vz_core.cpp` (compilación y exit 0).
+- Alcance: pruebas autónomas de lógica, **no** compilación MAME, **no** ejecución del firmware NEO original ni acreditación física.
