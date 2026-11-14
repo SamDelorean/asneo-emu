@@ -72,3 +72,6 @@ La UART universal de Dana ya está incorporada al único `neo-diag` en T con `RO
 
 ## R6 — Corrección de las dos ROM activas (2026-11-14)
 El ensamblador de firmware se corrigió al mapa real de bloques de 0x400 bytes; System3 ahora ejecuta sus rutinas y presenta el diálogo auténtico de batería. La tecla Y se verificó, y el siguiente paso físico de interfaz pide Enter para reiniciar. El único binario en T es SHA256 `386635d9f9e9eef1d48662d6ea0834b03fa37445de175c306352d28ba4490534`. Los SHA de la tabla inicial son los **activos vigentes**; las pruebas R4/R5 documentadas más arriba son históricas y usaron los viejos medios R3 inválidos. Ver [R6](R6_FLASH_SEGMENT_ALIGNMENT_20261114.md).
+
+## R6 — Confirmación Y y Enter
+Teclas verificadas: Y `ROW15/0x01` y Enter `ROW9/0x40`. En ambas ROM el mensaje de batería desaparece y después de Enter se muestra **Updater Mode**, no el escritorio ni Writer. La secuencia de entrada pasó, pero el reinicio normal/AlphaWord sigue **NO ACREDITADO**. [Detalles y evidencia](R6_FLASH_SEGMENT_ALIGNMENT_20261114.md).
