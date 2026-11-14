@@ -49,3 +49,17 @@ Resultados en Drive (`AS2K_TEMP/NEO_DIAG_PIPELINE/outbox`):
 - [Estado funcional desglosado](https://drive.google.com/file/d/1HUyCTLz76s5THqdW35B3MgOyYs2iEybz/view)
 
 La primera validación `46be3fc` sí compiló y comprobó ROM, pero MAME detectó etiquetas uppercase inválidas en los dos sets durante la prueba del proceso, aunque éste retornó 0. Se corrigió en `a09d147` y sólo este último se considera el resultado válido y cerrado de integración.
+
+## Rutas operativas permanentes en T
+
+Los dos sets MAME fueron registrados también en la ruta **privada permanente** `/home/spc/Projects/alphasmart/private/roms/neo/mame_sets`, utilizando únicamente enlaces simbólicos a las dos imágenes originales de `os3k_minimal`, sin duplicarlas ni reescribirlas.
+
+Comandos reales del mismo ejecutable:
+```bash
+/home/spc/Projects/alphasmart/neo-diag/neo-diag asneob \
+  -rompath /home/spc/Projects/alphasmart/private/roms/neo/mame_sets
+/home/spc/Projects/alphasmart/neo-diag/neo-diag asneow \
+  -rompath /home/spc/Projects/alphasmart/private/roms/neo/mame_sets
+```
+
+Ambos `-verifyroms` con la ruta permanente: **PASS**, un ROM set correcto por variante. [Recibo generado en T](https://drive.google.com/file/d/1V3EBOCYHP0xncNqWrNhBpgHho2E-d4HF/view). Boot real System 3 y funcionamiento del editor siguen **NO ACREDITADOS**.
