@@ -5,7 +5,8 @@
 // keyboard and LCD protocols are cross-checked against ioma8/neo-re.
 //
 // VZ PLL/RTC/Timer1/2/IRQ core is adapted from Dana. NOR CFI, USB and physical
-// low-power timing are still pending calibration on NEO firmware.
+// low-power timing remain pending qualification with NEO firmware.
+// ST M29W320EB NOR profile is provisional, never an ID of the user’s board.
 // Unsupported operations are logged; this driver is MACHINE_NOT_WORKING.
 // No invented boot screens, no OS trap shims, no Dana-specific peripherals.
 #include "emu.h"
@@ -17,6 +18,8 @@
 #include "neo_keyboard.h"
 #include "neo_lcd.h"
 #include "neo_vz_core.h"
+#include "neo_nor.h"
+#include "machine/nvram.h"
 
 #include <algorithm>
 #include <array>
@@ -44,7 +47,9 @@ namespace {
 class alphasneo_state : public driver_device {
 public:
     alphasneo_state(const machine_config &cfg,device_type type,const char *tag)
-        :driver_device(cfg,type,tag),m_cpu(*this,"maincpu"),m_rows(*this,"ROW%u",0U) {}
+        :driver_device(cfg,type,tag),m_cpu(*this,"maincpu"),
+         m_rows(*this,"ROW%u",0U),m_nor_config(*this,"NOR_PROFILE"),
+         m_flash_nvram(*this,"flashnv"),m_ram_nvram(*this,"ramnv") {}
     void asneo(machine_config &cfg);
 protected:
     virtual void machine_start() override ATTR_COLD;
@@ -52,7 +57,12 @@ protected:
 private:
     required_device<neo_vz_cpu_device> m_cpu;
     required_ioport_array<16> m_rows;
-    std::vector<u8> m_sram, m_flash;
+    required_ioport m_nor_config;
+    required_device<nvram_device> m_flash_nvram;
+    required_device<nvram_device> m_ram_nvram;
+    std::vector<u8> m_sram, m_flash, m_flash_seed;
+    neo::nor_flash m_nor;
+    void nvram_seed_flash(nvram_device &device,void *base,size_t bytes);
     neo::keyboard m_keyboard;
     neo::lcd m_lcd;
     neo::vz_core m_vz;
@@ -89,7 +99,12 @@ private:
 };
 void alphasneo_state::machine_start() {
     m_sram.assign(0x80000,0);
-    m_flash.assign(0x200000,0xff);
+    m_flash.assign(neo::nor_flash::size_bytes,0xff);
+    m_flash_seed.assign(neo::nor_flash::size_bytes,0xff);
+    // NVRAM owns virtual media only. Original update packages are untouched.
+    m_flash_nvram->set_base(m_flash.data(),m_flash.size());
+    m_ram_nvram->set_base(m_sram.data(),m_sram.size());
+    m_nor.attach(m_flash.data(),m_flash.size());
     m_registers.fill(0);
     m_clk32_timer=timer_alloc(FUNC(alphasneo_state::clk32_tick),this);
     m_compare_timers[0]=timer_alloc(FUNC(alphasneo_state::timer1_compare),this);
@@ -97,9 +112,9 @@ void alphasneo_state::machine_start() {
     const auto *small=memregion("smallrom");
     const auto *system=memregion("system");
     std::string error;
-    m_firmware_valid=neo::firmware::install_small(small->base(),small->bytes(),m_flash,error);
+    m_firmware_valid=neo::firmware::install_small(small->base(),small->bytes(),m_flash_seed,error);
     if(m_firmware_valid)
-        m_firmware_valid=neo::firmware::install_system(system->base(),system->bytes(),m_flash,error);
+        m_firmware_valid=neo::firmware::install_system(system->base(),system->bytes(),m_flash_seed,error);
     if(!m_firmware_valid) {
         logerror("NEO_FIRMWARE_IMPORT_FAIL %s\n",error.c_str());
         // No fake reset vector or fabricated successful OS boot.
@@ -108,9 +123,20 @@ void alphasneo_state::machine_start() {
         logerror("NEO_FIRMWARE_IMPORT_OK (segment assembly only, not boot PASS)\n");
     }
 }
+void alphasneo_state::nvram_seed_flash(nvram_device &,void *base,size_t size) {
+    // Called only if MAME has no saved Flash image. Do not reflash on reset.
+    if(m_firmware_valid && size==m_flash_seed.size())
+        std::copy(m_flash_seed.begin(),m_flash_seed.end(),static_cast<u8 *>(base));
+    else std::fill_n(static_cast<u8 *>(base),size,0xff);
+    logerror("NEO_FLASH_FACTORY_SEED virtual_data=1 valid=%u size=%zu\n",
+        unsigned(m_firmware_valid),size);
+}
 void alphasneo_state::machine_reset() {
     if(!m_firmware_valid)return;
     m_keyboard.reset();m_lcd.reset();m_registers.fill(0);
+    m_nor.select_profile((m_nor_config->read()&1)?
+        neo::nor_flash::profile::m29w320eb:
+        neo::nor_flash::profile::unknown_readonly);
     m_vz.reset();
     system_time host;machine().current_datetime(host);
     const auto &now=host.local_time;
@@ -241,11 +267,13 @@ void alphasneo_state::ram_w(offs_t offset,u16 data,u16 mask) {
     if(mask&0x00ff)m_sram[a+1]=data&0xff;
 }
 u16 alphasneo_state::flash_r(offs_t offset,u16 mask) {
-    u32 a=offset<<1;
-    return (u16(m_flash[a])<<8)|m_flash[a+1];
+    return m_nor.read_word(u32(offset)<<1);
 }
 void alphasneo_state::flash_w(offs_t offset,u16 data,u16 mask) {
-    logerror("NEO_FLASH_CFI_UNIMPLEMENTED at %08x value=%04x mask=%04x\n",0x00400000+(offset<<1),data,mask);
+    const u32 byte_offset=u32(offset)<<1;
+    if(!m_nor.write_word(byte_offset,data,mask))
+        logerror("NEO_NOR_REJECTED profile=%u addr=%08x value=%04x mask=%04x\n",
+            unsigned(m_nor_config->read()&1),0x00400000+byte_offset,data,mask);
 }
 u16 alphasneo_state::lcd_read(unsigned n,u16 mask) {
     u16 result=0xffff;
@@ -269,13 +297,17 @@ void alphasneo_state::palette_init(palette_device &palette) const {
 }
 void alphasneo_state::mem_map(address_map &map) {
     map(0x00000000,0x0007ffff).rw(FUNC(alphasneo_state::ram_r),FUNC(alphasneo_state::ram_w));
-    map(0x00400000,0x005fffff).rw(FUNC(alphasneo_state::flash_r),FUNC(alphasneo_state::flash_w));
+    map(0x00400000,0x007fffff).rw(FUNC(alphasneo_state::flash_r),FUNC(alphasneo_state::flash_w));
     map(0x01000000,0x01000001).rw(FUNC(alphasneo_state::lcd_right_r),FUNC(alphasneo_state::lcd_right_w));
     map(0x01008000,0x01008001).rw(FUNC(alphasneo_state::lcd_left_r),FUNC(alphasneo_state::lcd_left_w));
     map(0xfffff000,0xffffffff).rw(FUNC(alphasneo_state::vz_r),FUNC(alphasneo_state::vz_w));
     // ASIC 0x02000000, NOR CFI and external IRQ GPIO are still unmodeled.
 }
 static INPUT_PORTS_START( asneo )
+    PORT_START("NOR_PROFILE")
+    PORT_CONFNAME(0x01,0x00,"NEO NOR device candidate")
+    PORT_CONFSETTING(0x00,"Unknown device (array read-only)")
+    PORT_CONFSETTING(0x01,"ST M29W320EB 4MiB (reported NEO board)")
     PORT_START("ROW0")
     PORT_BIT(0x01, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("Close bracket [0x00]") PORT_CODE(KEYCODE_CLOSEBRACE)
     PORT_BIT(0x02, IP_ACTIVE_LOW, IPT_KEYBOARD) PORT_NAME("File 6 [0x10]")
@@ -434,6 +466,9 @@ void alphasneo_state::asneo(machine_config &cfg) {
     screen.set_screen_update(FUNC(alphasneo_state::screen_update));
     screen.set_palette("palette");
     PALETTE(cfg,"palette",FUNC(alphasneo_state::palette_init),2);
+    NVRAM(cfg,"ramnv",nvram_device::DEFAULT_ALL_0);
+    NVRAM(cfg,"flashnv",nvram_device::DEFAULT_ALL_1)
+        .set_custom_handler(FUNC(alphasneo_state::nvram_seed_flash));
 }
 ROM_START(asneo)
     // Files are user-provided update packages, not a complete physical NOR dump.

@@ -25,3 +25,6 @@ jobs:
           ${{ matrix.compiler }} -std=c++17 -Wall -Wextra -Werror -pedantic \
             -Isrc/mame/skeleton tests/neo_vz_core.cpp -o /tmp/asneo-tests/vz_core
           /tmp/asneo-tests/vz_core
+          ${{ matrix.compiler }} -std=c++17 -Wall -Wextra -Werror -pedantic \
+            -Isrc/mame/skeleton tests/neo_nor.cpp -o /tmp/asneo-tests/nor
+          /tmp/asneo-tests/nor
