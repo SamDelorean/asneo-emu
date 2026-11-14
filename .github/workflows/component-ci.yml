@@ -1,0 +1,27 @@
+name: NEO portable C++ regression
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  components:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [g++, clang++]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run shared NEO hardware components
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/asneo-tests
+          ${{ matrix.compiler }} -std=c++17 -Wall -Wextra -Werror -pedantic \
+            -Isrc/mame/skeleton tests/neo_components.cpp -o /tmp/asneo-tests/components
+          /tmp/asneo-tests/components
+          ${{ matrix.compiler }} -std=c++17 -Wall -Wextra -Werror -pedantic \
+            -Isrc/mame/skeleton tests/neo_vz_core.cpp -o /tmp/asneo-tests/vz_core
+          /tmp/asneo-tests/vz_core
