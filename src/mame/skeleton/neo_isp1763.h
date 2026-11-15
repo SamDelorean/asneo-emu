@@ -32,7 +32,8 @@ public:
         m_regs[0xac/2]=0xffff; // INT
         m_regs[0xa6/2]=0xffff; // ISO
         m_attached=false;m_vbus=false;m_suspended=false;
-        m_atl_done=0;m_device_address=0;
+        m_atl_done=0;m_device_address=0;m_requested_address=0;
+        m_address_pending=false;m_root_reset_pending=false;m_ms=0;m_root_reset_until=0;
     }
     // ISP1763 CPU bus is 16-bit; 32-bit registers are LOW word then HIGH word.
     // Firmware explicitly exchanges word halves when constructing a BE 68k dword.
@@ -66,17 +67,24 @@ public:
         auto merge=[&](u16 &v){v=u16((v&~mask)|(data&mask));};
         switch(offset){
         case 0x70:case 0x72:return; // read-only silicon ID
-        case 0x00:merge(m_regs[0]);m_device_address=u8(m_regs[0]&0x7f);return;
+        // Reuse Dana's status-stage ownership: CPU readback may change now,
+        // but the USB wire address changes only after EP0 status IN ACK.
+        case 0x00:merge(m_regs[0]);m_requested_address=u8(m_regs[0]&0x7f);
+            m_address_pending=true;return;
         case 0x8c:case 0x9c:case 0xba:case 0xb2:case 0xb4: {
             if(m_unlocked)merge(m_regs[offset/2]);
             return;
         }
         case 0xa0: {
-            // EHCI PORTSC: CCS is hardware-owned; PEC/CSC is W1C.
+            // Reuse Dana's asynchronous root-port reset/connection timing.
+            // ISP1763 PORTSC uses one external downstream port, not Dana's two.
             const u16 old=m_regs[0xa0/2];
-            u16 next=u16((old & 0x0003U) | ((data&mask)&0x1ff8U));
-            if((data&mask)&0x0002)next &=~u16(0x0002);
-            if(next&0x0100){next=u16((next&~u16(0x0100))|((next&1)?0x0004:0));}
+            u16 next=u16((old & 0x0007U) | ((data&mask)&0x1ff8U));
+            if((data&mask)&0x0002)next &=~u16(0x0002); // W1C change
+            if((data&mask)&0x0100){ // port RESET, not instantaneous enable
+                next=u16((next|u16(0x0100))&~u16(0x0004));
+                m_root_reset_pending=true;m_root_reset_until=m_ms+10;
+            }
             m_regs[0xa0/2]=next;
             return;
         }
@@ -145,10 +153,28 @@ public:
     void set_host_attached(bool attached) {
         if(attached==m_attached)return;
         m_attached=attached;
+        if(!attached)m_root_reset_pending=false;
         auto &port=m_regs[0xa0/2];
         port=u16((port&~u16(0x0005))|(attached?0x0001:0x0000)|0x0002);
         m_host_irq|=0x0010; // EHCI operational register change
     }
+    // This is the native 1-ms USB service tick; it must be driven by MAME's
+    // existing USB timer and not by host wall-clock polling or a fake IRQ.
+    void tick_1ms() {
+        ++m_ms;
+        if(m_root_reset_pending && m_ms>=m_root_reset_until) {
+            m_root_reset_pending=false;
+            auto &port=m_regs[0xa0/2];
+            port=u16(port&~u16(0x0100));
+            if(m_attached && (port&0x1000))port|=u16(0x0004);
+            else port&=~u16(0x0004);
+            port|=u16(0x0002); // connection/enable change
+            m_host_irq|=0x0010;
+        }
+    }
+    // Distinguish chip INT (HC/DC mask state) from unknown NEO PCB wiring.
+    // No guessed MC68VZ328 IRQ2/IRQ3 mapping is added here.
+    bool controller_interrupt() const {return irq();}
     bool host_attached() const {return m_attached;}
     bool vbus() const {return m_vbus;}
     u8 device_address() const {return m_device_address;}
@@ -158,8 +184,8 @@ public:
     // Transport is an independent, explicitly mounted USB function.
     template<class Packet>
     unsigned service_host(Packet&& packet) {
-        if(!m_attached || !(m_regs[0xa0/2]&0x1000) ||
-           !(m_regs[0xa0/2]&1) || !(m_regs[0x8c/2]&1) ||
+        if(!m_attached || (m_regs[0xa0/2]&0x1005)!=0x1005 ||
+           !(m_regs[0x8c/2]&1) ||
            !(m_regs[0x9c/2]&1) || !(m_regs[0xba/2]&1))return 0;
         unsigned completed=0;
         for(unsigned slot=0;slot<16;++slot) {
@@ -219,7 +245,8 @@ public:
         using namespace neo_usb;
         (void)flags; // framing flag interpreted by mounted USB peer
         if(op==1) {m_vbus=true;m_suspended=false;m_device_irq|=0x80;return {handshake::ack,0};}
-        if(op==2) {m_vbus=false;m_suspended=false;return {handshake::ack,0};}
+        if(op==2) {m_vbus=false;m_suspended=false;m_address_pending=false;
+            return {handshake::ack,0};}
         if(op==0x10) {
             if(!in)return {handshake::pid_error,0};
             const std::array<u8,8> status{
@@ -229,7 +256,8 @@ public:
             return {handshake::ack,8};
         }
         if(!m_vbus || !(m_regs[0x0c/2]&1))return {handshake::timeout,0};
-        if(op==3){m_device_address=0;m_regs[0]=0;
+        if(op==3){m_device_address=m_requested_address=0;
+            m_address_pending=false;m_regs[0]=0;
             for(auto &ep:m_ep){ep.length=ep.cursor=0;ep.ready=false;ep.halted=false;}
             m_device_irq|=1;return {handshake::ack,0};}
         if(op==4){m_regs[0x74/2]=u16((m_regs[0x74/2]+1)&0x7ff);
@@ -248,8 +276,14 @@ public:
             return inject_out(u8(endpoint*2),out,length)?reply{handshake::ack,length}:reply{handshake::nak,0};
         }
         u16 received=length;
-        return (in && take_in(u8(endpoint*2+1),in,received))
-            ? reply{handshake::ack,received}:reply{handshake::nak,0};
+        if(!in || !take_in(u8(endpoint*2+1),in,received))
+            return {handshake::nak,0};
+        // USB SET_ADDRESS takes effect after the acknowledged ZLP status
+        // packet, exactly as in Dana's qualified DC implementation.
+        if(endpoint==0 && received==0 && m_address_pending) {
+            m_device_address=m_requested_address;m_address_pending=false;
+        }
+        return {handshake::ack,received};
     }
     u16 read_host_word(unsigned address) const {
         if(address+1>=m_host_ram.size())return 0xffff;
@@ -268,7 +302,9 @@ private:
     u8 m_ep_select=0x20,m_dma_ep=0;
     bool m_unlocked=true;
     bool m_attached=false,m_vbus=false,m_suspended=false;
-    u8 m_device_address=0;
+    u8 m_device_address=0,m_requested_address=0;
+    bool m_address_pending=false,m_root_reset_pending=false;
+    u32 m_ms=0,m_root_reset_until=0;
     u16 m_atl_done=0;
     std::size_t ep_index() const {return (m_ep_select&0x20)?16:std::size_t(m_ep_select&0x0f);}
     bool resize_endpoint(std::size_t which,u16 size){
@@ -299,6 +335,7 @@ private:
     }
     void reset_host(){
         m_host_ram.fill(0);m_hc_addr=m_host_irq=m_host_enable=m_atl_done=0;
+        m_root_reset_pending=false;
         m_regs[0xb2/2]=m_regs[0xac/2]=m_regs[0xa6/2]=0xffff;
         m_regs[0xd4/2]=0x40;
     }
