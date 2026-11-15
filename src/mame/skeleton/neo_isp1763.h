@@ -67,8 +67,10 @@ public:
         switch(offset){
         case 0x70:case 0x72:return; // read-only silicon ID
         case 0x00:merge(m_regs[0]);m_device_address=u8(m_regs[0]&0x7f);return;
-        case 0x8c:case 0x9c:case 0xba:case 0xb2:case 0xb4:
-            if(m_unlocked)merge(m_regs[offset/2]);return;
+        case 0x8c:case 0x9c:case 0xba:case 0xb2:case 0xb4: {
+            if(m_unlocked)merge(m_regs[offset/2]);
+            return;
+        }
         case 0xa0: {
             // EHCI PORTSC: CCS is hardware-owned; PEC/CSC is W1C.
             const u16 old=m_regs[0xa0/2];
