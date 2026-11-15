@@ -46,14 +46,15 @@ int main(){
     assert(c.service_host(trans)==0); // no physical printer mounted
     assert(c.read(0xb0)==0);
     c.set_host_attached(true);
-    assert(c.read(0xa0)&1);
-    // Power was enabled at the start of this test; connected full-speed
-    // D+ and the hardware change latch must now be visible together.
-    assert(c.read(0xa0)==0x1803);
-    assert(c.service_host(trans)==0); // port not yet reset/enabled
-    c.write(0xa0,0x1000); // power enables attached full-speed D+ line
-    // OS3K firmware checks this port status at Usb1763.c:2671.
-    assert(c.read(0xa0)==0x1803);
+    // Host VBUS is already on. A connected image takes a real 20-ms
+    // virtual settle period before ECCS/ECSC/LS become visible.
+    assert(c.read(0xa0)==0x1000);
+    for(unsigned ms=0;ms<19;++ms)c.tick_1ms();
+    assert(c.read(0xa0)==0x1000);
+    c.tick_1ms();
+    assert(c.read(0xa0)==0x1803); // PP + D+ + ECSC + ECCS
+    assert(c.service_host(trans)==0); // port still awaits reset
+    // OS3K firmware checks this exact physical state at Usb1763.c:2671.
     // Line status is read-only; software writes do not spoof DP/DM pins.
     c.write(0xa0,0x1800);
     assert(c.read(0xa0)==0x1803);
@@ -86,9 +87,21 @@ int main(){
     assert(!(c.read(0xd4)&0x100));
     c.set_host_attached(false);
     assert(!(c.read(0xa0)&1));
-    assert((c.read(0xa0)&0x0c00)==0); 
+    assert((c.read(0xa0)&0x0c00)==0);
     c.write(0xa0,0x1800);
     assert((c.read(0xa0)&0x0c00)==0); // guest cannot forge D+
+
+    // Actual NEO firmware starts with a printer already plugged into
+    // an unpowered port. No phantom change bit before VBUS is enabled.
+    c.write(0xa0,0x0000);
+    c.set_host_attached(true);
+    assert((c.read(0xa0)&0x0003)==0);
+    c.write(0xa0,0x1002); // firmware sets PP and clears old change bits
+    assert(c.read(0xa0)==0x1000);
+    for(unsigned ms=0;ms<20;++ms)c.tick_1ms();
+    assert(c.read(0xa0)==0x1803);
+    c.write(0xa0,0x1002); // W1C ECSC, must not fake reconnection
+    assert(c.read(0xa0)==0x1801);
     ptd(c,0,1,1,sizeof(text),true);
     assert(c.service_host(trans)==0); // no printer => no ACK
     // Independent upstream/PC port. Descriptors come from the guest firmware.
