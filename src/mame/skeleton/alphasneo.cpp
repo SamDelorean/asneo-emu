@@ -44,13 +44,14 @@ public:
 };
 DEFINE_DEVICE_TYPE(NEO_VZ_CPU,neo_vz_cpu_device,"neo_vz_cpu","AlphaSmart NEO VZ bus")
 DEFINE_DEVICE_TYPE(NEO_VZ_UART,neo_vz_uart_device,"neo_vz_uart","MC68VZ328 UART (NEO)")
+DEFINE_DEVICE_TYPE(NEO_SERIAL_PEER,neo_serial_peer_device,"neo_serial_peer","NEO mounted serial/IrDA peer")
 
 namespace {
 class alphasneo_state : public driver_device {
 public:
     alphasneo_state(const machine_config &cfg,device_type type,const char *tag)
         :driver_device(cfg,type,tag),m_cpu(*this,"maincpu"),
-         m_uart(*this,"uart%u",0U),
+         m_uart(*this,"uart%u",0U),m_serial_peer(*this,"serial_peer%u",0U),
          m_rows(*this,"ROW%u",0U),m_nor_config(*this,"NOR_PROFILE"),
          m_flash_nvram(*this,"flashnv"),m_ram_nvram(*this,"ramnv") {}
     void asneo(machine_config &cfg);
@@ -61,6 +62,7 @@ protected:
 private:
     required_device<neo_vz_cpu_device> m_cpu;
     required_device_array<neo_vz_uart_device,2> m_uart;
+    required_device_array<neo_serial_peer_device,2> m_serial_peer;
     required_ioport_array<16> m_rows;
     required_ioport m_nor_config;
     required_device<nvram_device> m_flash_nvram;
@@ -242,8 +244,9 @@ TIMER_CALLBACK_MEMBER(alphasneo_state::timer2_compare) {
 TIMER_CALLBACK_MEMBER(alphasneo_state::clk32_tick) {
     m_vz.advance_clk32();
     if(m_vz.watchdog_trip()) {
-        logerror("NEO_VZ_WATCHDOG_RESET_REQUEST (reset action not yet hardware-qualified)\n");
+        logerror("NEO_VZ_WATCHDOG_HARD_RESET scheduled by MC68VZ328\n");
         m_vz.clear_watchdog_trip();
+        machine().schedule_hard_reset();
     }
     update_vz_irq();
 }
@@ -530,17 +533,21 @@ static INPUT_PORTS_START( asneo )
 INPUT_PORTS_END
 
 void alphasneo_state::asneo(machine_config &cfg) {
-    // Reuse universal VZ UARTs; no Dana serial peer is attached.
+    // Reuse Dana VZ UARTs and optical SIR/serial byte-stream peers. No peer mounted by default.
     for(unsigned n=0;n<2;++n) {
         NEO_VZ_UART(cfg,m_uart[n]);
+        NEO_SERIAL_PEER(cfg,m_serial_peer[n]);
         m_uart[n]->channel(n+1);
+        m_serial_peer[n]->optical(n==1);
         m_uart[n]->irq().set([this,n](int state) {
             m_vz.set_pending(n?0x00001000U:0x00000004U,bool(state));
             update_vz_irq();
         });
         m_uart[n]->clock_changed().set([this](int) {update_serial_clock();});
-        m_uart[n]->output().set_nop();
-        m_uart[n]->rts().set_nop();
+        m_uart[n]->output().set([this,n](int v){m_serial_peer[n]->pin_w(v);});
+        m_uart[n]->rts().set([this,n](int v){m_serial_peer[n]->rts_w(v);});
+        m_serial_peer[n]->output().set([this,n](int v){m_uart[n]->rxpin_w(v);});
+        m_serial_peer[n]->cts().set([this,n](int v){m_uart[n]->cts_w(v);});
     }
     // 33 MHz is the current neo-re timing reference, not physically certified.
     NEO_VZ_CPU(cfg,m_cpu,33'000'000);
