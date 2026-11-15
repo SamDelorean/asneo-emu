@@ -242,8 +242,11 @@ public:
             const unsigned maxpacket=(w0>>18)&0x7ff;
             const unsigned done=w3&0x7fff;
             const unsigned payload=0x400+(((w2>>8)&0xffff)*8);
+            // USB status stages are zero-length packets: DW2's payload
+            // pointer is ignored by silicon when NrBytesToTransfer==0.
+            // Preserve strict bounds for all nonempty PTDs.
             if(!maxpacket || maxpacket>1024 || total>1024 || done>total ||
-               payload<0x1000 || payload+total>m_host_ram.size())continue;
+               (total && (payload<0x1000 || payload+total>m_host_ram.size())))continue;
             const unsigned code=(w1>>10)&3;
             if(code>2 || (w1&0x4000))continue; // no unqualified split
             const unsigned requested=std::min(maxpacket,total-done);
