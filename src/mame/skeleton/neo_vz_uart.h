@@ -2,11 +2,12 @@
 // copyright-holders:DANA-emu contributors, SamDelorean contributors
 // Reuse of MC68VZ328 serial PHY/UART, adapted from:
 // SamDelorean/DANA-emu/src/mame/skeleton/dana_vz_uart.h.
-// Excludes Dana peer/mounted streams; retains FIFO, framing, clock, IRQ and save-state.
+// Reuses Dana's qualified UART and explicitly mounted independent serial/SIR peer.
 #ifndef MAME_SKELETON_NEO_VZ_UART_H
 #define MAME_SKELETON_NEO_VZ_UART_H
 #pragma once
 #include "diserial.h"
+#include "imagedev/bitbngr.h"
 #include <algorithm>
 #include <cmath>
 
@@ -133,6 +134,102 @@ protected:
     int m_normal=1;
     double m_txleft=0.5,m_rxleft=1.0;
 };
+
+class neo_serial_peer_device;
+DECLARE_DEVICE_TYPE(NEO_SERIAL_PEER,neo_serial_peer_device)
+
+// An explicitly mounted MAME byte stream is an independent serial peer.
+// Baud/framing/SIR are peer settings, not copied from the guest UART.
+class neo_serial_peer_device : public neo_serial_phy
+{
+public:
+    neo_serial_peer_device(const machine_config &config,const char *tag,device_t *owner,u32 clock=0)
+        : neo_serial_phy(config,NEO_SERIAL_PEER,tag,owner,clock),m_stream(*this,"stream"),
+          m_baud(*this,"BAUD"),m_format(*this,"FORMAT"),m_lines(*this,"LINES") {}
+    void pin_w(int state) { if(m_stream->is_open()) neo_serial_phy::pin_w(state); }
+    auto cts() { return m_cts.bind(); }
+    void rts_w(int state) { m_rts=!!state; }
+    void update(int state) { configure(); }
+    void optical(bool value) { m_default_sir=value; }
+    bool optical_mode() const { return m_sir; }
+protected:
+    virtual void device_add_mconfig(machine_config &config) override { BITBANGER(config,m_stream); }
+    virtual ioport_constructor device_input_ports() const override;
+    virtual void device_start() override
+    {
+        neo_serial_phy::device_start();
+        m_poll=timer_alloc(FUNC(neo_serial_peer_device::poll),this);
+        machine().save().register_postload(save_prepost_delegate(FUNC(neo_serial_peer_device::detach),this));
+        save_item(NAME(m_break)); save_item(NAME(m_rts)); save_item(NAME(m_queue)); save_item(NAME(m_head)); save_item(NAME(m_count));
+    }
+    virtual void device_reset() override
+    {
+        m_head=m_count=0; m_rts=1; configure(); phy_reset();
+        m_poll->adjust(attotime::from_msec(1),0,attotime::from_msec(1));
+    }
+    void detach()
+    {
+        m_stream->unload(); m_head=m_count=0; phy_reset(); m_cts(1);
+    }
+    void configure()
+    {
+        u32 const f=m_format->read();
+        m_sir=(f&8) ? bool(f&16) : m_default_sir; m_sirtx=m_sir;
+        period_w(attotime::from_hz(m_baud->read())); m_width=attotime::from_nsec(1630);
+        set_data_frame(1,(f&1)?7:8,(f&2)?((f&4)?PARITY_ODD:PARITY_EVEN):PARITY_NONE,STOP_BITS_1);
+
+    }
+    TIMER_CALLBACK_MEMBER(poll)
+    {
+        u32 const lines=m_lines->read();
+        m_cts((lines&1) || !m_stream->is_open());
+        // The peer's break switch drives a real line, not a receiver flag.
+        bool const was=m_break; m_break=bool(lines&4);
+        if(m_break || was) drive(m_break?0:1);
+        if (!m_stream->is_open() || ((lines&2) && m_rts)) return;
+        if (!m_count) { m_head=0; m_count=m_stream->input(m_queue,sizeof(m_queue)); }
+        if (m_count && is_transmit_register_empty())
+        { start_frame(m_queue[m_head++] & ((m_format->read()&1)?0x7f:0xff)); --m_count; }
+    }
+    virtual void tra_callback() override
+    { int const bit=transmit_register_get_data_bit(); send_bit(m_break?0:(m_stream->is_open()?bit:1)); }
+    virtual void rcv_complete() override
+    {
+        receive_register_extract();
+        if (m_stream->is_open()) m_stream->output(get_received_char());
+    }
+private:
+    required_device<bitbanger_device> m_stream;
+    required_ioport m_baud,m_format,m_lines;
+    devcb_write_line m_cts{*this};
+    bool m_default_sir=false,m_break=false;
+    int m_rts=1;
+    u8 m_queue[256]={};
+    u16 m_head=0,m_count=0;
+    emu_timer *m_poll=nullptr;
+};
+
+static INPUT_PORTS_START(neo_serial_peer)
+    PORT_START("BAUD")
+    PORT_CONFNAME(0x0003ffff,9600,"Serial peer baud") PORT_WRITE_LINE_DEVICE_MEMBER(DEVICE_SELF,FUNC(neo_serial_peer_device::update))
+    PORT_CONFSETTING(1200,"1200") PORT_CONFSETTING(2400,"2400") PORT_CONFSETTING(4800,"4800")
+    PORT_CONFSETTING(9600,"9600") PORT_CONFSETTING(19200,"19200") PORT_CONFSETTING(38400,"38400")
+    PORT_CONFSETTING(57600,"57600") PORT_CONFSETTING(115200,"115200")
+    PORT_START("FORMAT")
+    PORT_CONFNAME(1,0,"Serial peer data bits") PORT_WRITE_LINE_DEVICE_MEMBER(DEVICE_SELF,FUNC(neo_serial_peer_device::update))
+    PORT_CONFSETTING(0,"8") PORT_CONFSETTING(1,"7")
+    PORT_CONFNAME(6,0,"Serial peer parity") PORT_WRITE_LINE_DEVICE_MEMBER(DEVICE_SELF,FUNC(neo_serial_peer_device::update))
+    PORT_CONFSETTING(0,"None") PORT_CONFSETTING(2,"Even") PORT_CONFSETTING(6,"Odd")
+    PORT_CONFNAME(24,0,"Serial peer physical link") PORT_WRITE_LINE_DEVICE_MEMBER(DEVICE_SELF,FUNC(neo_serial_peer_device::update))
+    PORT_CONFSETTING(0,"NEO UART1 NRZ / UART2 optical SIR")
+    PORT_CONFSETTING(8,"NRZ") PORT_CONFSETTING(24,"Optical SIR")
+    PORT_START("LINES")
+    PORT_CONFNAME(1,0,"Serial peer CTS") PORT_CONFSETTING(0,"Ready when mounted") PORT_CONFSETTING(1,"Busy")
+    PORT_CONFNAME(2,2,"Serial peer obey RTS") PORT_CONFSETTING(0,"No") PORT_CONFSETTING(2,"Yes")
+    PORT_CONFNAME(4,0,"Serial peer break (NRZ)") PORT_CONFSETTING(0,"Released") PORT_CONFSETTING(4,"Asserted")
+INPUT_PORTS_END
+inline ioport_constructor neo_serial_peer_device::device_input_ports() const { return INPUT_PORTS_NAME(neo_serial_peer); }
+
 
 class neo_vz_uart_device;
 DECLARE_DEVICE_TYPE(NEO_VZ_UART,neo_vz_uart_device)
