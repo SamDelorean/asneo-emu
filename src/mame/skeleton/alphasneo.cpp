@@ -259,6 +259,7 @@ TIMER_CALLBACK_MEMBER(alphasneo_state::timer2_compare) {
     m_vz.compare(1);update_vz_irq();timer_schedule(1);
 }
 TIMER_CALLBACK_MEMBER(alphasneo_state::usb_service) {
+    m_usb.tick_1ms(); // Reuse Dana's 1-ms virtual host/root scheduler.
     const bool attached=m_usb_printer->is_open()&&m_usb_printer->is_ready();
     if(attached!=m_usb.host_attached()){
         m_usb.set_host_attached(attached);
