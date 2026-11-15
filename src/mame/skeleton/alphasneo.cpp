@@ -54,6 +54,7 @@ public:
          m_rows(*this,"ROW%u",0U),m_nor_config(*this,"NOR_PROFILE"),
          m_flash_nvram(*this,"flashnv"),m_ram_nvram(*this,"ramnv") {}
     void asneo(machine_config &cfg);
+    INPUT_CHANGED_MEMBER(key_changed);
 protected:
     virtual void machine_start() override ATTR_COLD;
     virtual void machine_reset() override ATTR_COLD;
@@ -75,7 +76,6 @@ private:
     void update_vz_irq();
     void update_keyboard_irq(bool transition);
     u8 port_d_pins();
-    INPUT_CHANGED_MEMBER(key_changed);
     void update_vz_clock();
     void update_serial_clock();
     u16 timer_count(unsigned n) const;
