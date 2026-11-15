@@ -79,3 +79,7 @@ Teclas verificadas: Y `ROW15/0x01` y Enter `ROW9/0x40`. En ambas ROM el mensaje 
 
 ## R7 — Updater Mode es fallo de WRITER
 Una vez contestado Y y Enter, el NEO correctamente inicializado debe permitir entrar al editor. El `Updater Mode` observado en ambas variantes **no es PASS de WRITER**. Análisis dirigido R7: `0x00000E0A=0x00449602` registra System, pero `0x00000E0E=0` y los demás slots1–31 también; AlphaWord está físicamente en Flash pero no aparece en la tabla runtime. Cambiar el perfil NOR no corrige el problema. [Ver bitácora R7](R7_STARTUP_APPLET_REGISTRY_20261114.md).
+
+
+## R9 — Minimum boot applets
+NEO 2013 SmallROM + System3 + AlphaWord Plus es la combinación mínima cuya entrada del editor ha sido ejecutada: CFI QRY PASS, slot1=0x00470000, CPU en AlphaWord. No se requieren los otros applets para registro/ejecución; el LCD y la escritura funcional están pendientes. El perfil provisional ST debe seleccionarse explícitamente. [Evidencias R9](R9_MINIMUM_BOOT_APPLETS_20261114.md).

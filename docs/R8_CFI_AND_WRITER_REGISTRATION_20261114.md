@@ -33,3 +33,7 @@ The 16-bit flash handler `neo_nor.h` rejected every `mem_mask!=0xffff` before pr
 
 ## Next native acceptance
 One incremental compile in the current `neo-diag` tree, run `tests/neo_nor.cpp`, first inspect CFI `QRY` read from `0x400021` with ST profile selected, then execute WRITER on isolated NVRAM with Y→Enter. Pass only if ROM validates, `0x00000E8E` becomes a credible boundary, slot1 points to AlphaWord header, PC enters the applet area, LCD shows editor and keyboard text input works. If the strict CFI fix is insufficient, preserve the bin and trace the next observed native NOR command; do not invent broader behavior.
+
+
+## R9 calificación nativa posterior
+El código CFI ya pasó compilación, regresión y prueba MAME con perfil ST explícito. El límite se corrigió a 0x00800000, slot1=0x00470000 y el CPU ejecutó instrucciones de AlphaWord. **No se ha acreditado todavía un editor funcional ni texto persistente.** [Bitácora R9](R9_MINIMUM_BOOT_APPLETS_20261114.md). Los ítems anteriores de 'validación pendiente' son históricos.
