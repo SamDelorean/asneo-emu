@@ -18,7 +18,9 @@ static void ptd(neo::isp1763 &c,u8 pid,u8 addr,u8 ep,u16 bytes,bool toggle){
     const u32 dw0=1U|(u32(bytes)<<3)|(64U<<18)|(u32(ep&1)<<31);
     const u32 dw1=(u32((ep>>1)&7))|(u32(addr&0x7f)<<3)|(u32(pid)<<10)
         |(u32(ep?2:0)<<12);
-    const u32 dw2=u32((0x1000-0x400)/8)<<8;
+    // Original OS3K writes DW2=0 on the zero-length control status PTD:
+    // there is no payload, so that address must not be validated or read.
+    const u32 dw2=bytes ? u32((0x1000-0x400)/8)<<8 : 0U;
     const u32 dw3=0x80000000U|(toggle?0x02000000U:0);
     const u32 d[4]={dw0,dw1,dw2,dw3};
     std::array<u8,32> bytes_le{};
@@ -70,8 +72,10 @@ int main(){
     assert(c.controller_interrupt()); // native chip INT rises only after ATL completion
     assert(c.read(0xb0)==1 && c.read(0xb0)==0);
     assert(printer.address==0);
-    ptd(c,1,0,0,0,true); // control status IN, address latched on ACK
+    ptd(c,1,0,0,0,true); // status IN ZLP, DW2=0 (OS3K real format)
     assert(c.service_host(trans)==1);
+    assert(c.read(0xb0)==1); // hardware marks ZLP PTD complete
+    assert(c.read(0xb2)&1); // skip entry marked complete after ACK
     assert(printer.address==1);
     const u8 set_config[8]={0,9,1,0,0,0,0,0};
     memory(c,0x1000,set_config,sizeof(set_config));
