@@ -47,6 +47,13 @@ int main(){
     assert(c.read(0xb0)==0);
     c.set_host_attached(true);
     assert(c.read(0xa0)&1);
+    assert(c.service_host(trans)==0); // port not yet reset/enabled
+    c.write(0xa0,0x1100); // power on + physical reset
+    for(unsigned ms=0;ms<9;++ms)c.tick_1ms();
+    assert((c.read(0xa0)&0x104)==0x100); // reset still asserted
+    assert(c.service_host(trans)==0);
+    c.tick_1ms();
+    assert((c.read(0xa0)&0x104)==0x004); // enabled after 10 ms
     assert(c.service_host(trans)==1);
     assert(c.read(0xb0)==1 && c.read(0xb0)==0);
     assert(printer.address==0);
@@ -90,8 +97,12 @@ int main(){
     assert(c.upstream(9,0,0,0,nullptr,data.data(),64).status==neo_usb::handshake::ack);
     assert(data[0]=='A'&&data[1]=='B');
     assert(c.upstream(9,0,0,0,nullptr,data.data(),64).status==neo_usb::handshake::nak);
-    c.write(0x00,0x0081); // guest changes address after control status
-    assert(c.device_address()==1);
+    c.write(0x00,0x0081); // guest requests new USB address
+    assert(c.device_address()==0); // not yet on the physical wire
+    c.write(0x2c,0x01);
+    c.write(0x28,0x08); // guest arms zero-length status IN
+    assert(c.upstream(9,0,0,0,nullptr,data.data(),0).status==neo_usb::handshake::ack);
+    assert(c.device_address()==1); // activated by status ACK
     assert(c.upstream(3,0,0,0,nullptr,nullptr,0).status==neo_usb::handshake::ack);
     assert(c.device_address()==0);
     assert(c.upstream(2,0,0,0,nullptr,nullptr,0).status==neo_usb::handshake::ack);
