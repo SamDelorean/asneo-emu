@@ -25,3 +25,24 @@ Fuentes: [tabla original de 80 teclas](https://github.com/ioma8/neo-re/blob/main
 - **Compilación completa MAME/T**: el primer intento falló sólo por visibilidad C++ `key_changed` (corregido en `9b6b8da`); el segundo encontró `-Werror=parentheses` en la expresión de PDIRQEN/PDIRQEG (corregido en `b212d42`). No se instaló ninguno; el ejecutable anterior **permanece intacto**. La corrección final está publicada, pero **MAME nativo R11 y texto visible aún NO acreditados**.
 - Trabajo de compilación, matriz completa y `Y→Enter→TEST` final preparado en cola separada: `000_neo_diag_r11_keyboard_integrated_fix2_20261114.job.sh`, commit fijado `b212d42`. Respeta la regla de **máximo tres llamadas a Commander** de esta intervención: no se volvió a invocar la máquina una cuarta vez. El trabajo queda en bandeja, sin atribuirle resultado.
 - **Criterio final no cumplido aún:** compilación T exit 0, registro de 80 entradas MAME y aumento real de píxeles del LCD al teclear; posteriormente NVRAM y recuperación del texto. El test no instala un nuevo `neo-diag` cuando falla cualquiera de estas condiciones.
+
+
+## Cierre funcional R11 — 15 nov 2026 (validación nativa en T640)
+
+**R11 compilado, instalado y probado sobre firmware NEO 2013 original.** Esta sección reemplaza el estado pendiente descrito arriba, sin modificar las evidencias históricas de los dos intentos fallidos.
+
+- Fuente fijada: `b212d4251c6819b6cff5468cb4054cc52050dc0f`, un solo ejecutable `/home/spc/Projects/alphasmart/neo-diag/neo-diag`.
+- Trabajo de la inbox NEO: `NEO_DIAG_R11_KEYBOARD_INTEGRATED_FIX2_20261114`, **STATUS=PASS, STAGE=END, EXIT_CODE=0**. Pruebas `neo_components`, `neo_vz_core`, `neo_nor`: 3/3 PASS; compilación y enlace MAME GCC 15.2 PASS; auditoría BOOT/WRITER PASS; mapa 80 teclas ocupadas / 48 vacías PASS.
+- SHA-256 del ejecutable instalado: `eecd47ad87c6c55b4ea6a68a39e221c938ec9490d2c8c18d0782f8e3d42286cc`. ROM WRITER sin cambios (`a14ccd938e1fccb62b839870dbb1942a9bfafb6d51f9dfd42d9ad82399665626`).
+- Flujo de firmware real `Y → Enter → AlphaWord Plus → T/E/S/T`: registrado. `ILCR=0x6533`, slot1 `0x00470000`, primera ejecución applet frame 582. El LCD pasó de 32 píxeles oscuros (editor vacío) a 45/63/78/91 conforme ingresaron las cuatro teclas. Captura final MAME `0000.png` muestra **test**; no fue texto sintético.
+- Persistencia: segunda ejecución aislada con **copia** de NVRAM del ensayo anterior, **sin nuevas pulsaciones**. Job de comprobación `NEO_DIAG_R11_PERSISTENCE_20261115` PASS/exit 0. La pantalla recuperó **test**, y los frames 360, 720, 900 y 1250 mantuvieron 91 píxeles oscuros con slot1 `0x00470000`. Archivos de estado: `asneow/ramnv` 524288 B y `asneow/flashnv` 4194304 B. Los medios de usuario no se tocaron.
+- Estado de R11: **COMPILACIÓN NATIVA PASS, TECLADO FUNCIONAL PASS (T/E/S/T), LCD ALPHAWORD PASS, PERSISTENCIA DE TEXTO PASS.** La auditoría completa de asignación de 80 teclas valida los puertos y bindings, pero NO implica haber pulsado físicamente las 80 teclas ni calificado USB/IR/impresión.
+
+Evidencias Drive:
+- [Estado de ejecución R11](https://drive.google.com/file/d/1yrBsglZL_1KhztMStcLglFyBXJ65bIOP/view)
+- [Resultado y trazas R11](https://drive.google.com/file/d/1vBRnG4RRiqHouGWObE6hAK57O6egKl-P/view)
+- [Imagen de AlphaWord con test](https://drive.google.com/file/d/1cHlkxByFm6liWE1mTKs6bP7sX-iMI6RD/view)
+- [Persistencia — traza de reinicio](https://drive.google.com/file/d/1U8izjLQkcfuwLwl2AnuIK05-bRtolrw6/view)
+- [Persistencia — pantalla restaurada](https://drive.google.com/file/d/16VJu8g2vBw-vOsBeukncmpJNkendpAaR/view)
+
+No se realizaron modificaciones adicionales al emulador después de instalar el binario calificado ni se creó otra versión.
