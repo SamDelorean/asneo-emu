@@ -189,7 +189,7 @@ void alphasneo_state::update_keyboard_irq(bool transition) {
     const u8 iqen=m_registers[0x41d]&0x0f,iqeg=m_registers[0x41f]&0x0f;
     if(transition)m_pd_edges |= changed & (pin^pol) &~direction &0x0f;
     m_pd_last_pins=pin;
-    const u8 active=((pin^pol)&~iqeg | m_pd_edges&iqeg)&iqen&~direction&0x0f;
+    const u8 active=((((pin^pol)&~iqeg) | (m_pd_edges&iqeg)) & iqen & ~direction & 0x0f);
     for(unsigned bit=0;bit<4;++bit)
         m_vz.set_pending(0x00000100U<<bit,active&(1U<<bit));
     m_vz.set_pending(0x00000040U,(~pin)&m_registers[0x41e]&~direction);
