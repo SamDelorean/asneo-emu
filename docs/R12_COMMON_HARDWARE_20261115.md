@@ -1,3 +1,8 @@
+> **ACTUALIZACIÓN NATIVA R12 — 15-nov-2026.** El resultado posterior del despacho por la cola Drive NEO **sustituye las notas de bloqueo operativo previas**: compilación/enlace MAME 0.289, 4 tests C++, BOOT/WRITER y regresión real \`Y→Enter→TEST\` completados en T640 con **PASS, EXIT_CODE=0**. El ID ISP1763 leído por el programa MAME fue **LOW=0x6320/HIGH=0x0017**. Se instaló el único ejecutable \`/home/spc/Projects/alphasmart/neo-diag/neo-diag\`, SHA256 **\`7ac898998ce302861ba7a2227f1525df2871d2e0cdca8d495eab9c3b22a4e09e\`**; el binario R11 previo era \`eecd47ad87c6...\` y se preservó hasta el PASS de R12. La ventana USB es un núcleo MMIO/SRAM, **NO** un puerto PC ni impresora que ya transfiera datos. Las conexiones UART SIR y watchdog están compiladas; no se ensayó transferencia IrDA ni disparo real del watchdog.
+
+Evidencias: [estado PASS](https://drive.google.com/file/d/16p-4xOt1uO-hxhVQcPq38wYuOEKeU35v/view), [resultado MAME + teclado + USB ID](https://drive.google.com/file/d/1LShBZS9bdo-puDo0xPg-M3f17krnhnj0/view), [SHA de instalación](https://drive.google.com/file/d/1Vk9vqiSsQgqar-Zgu1Wkg1rpBuozXziB/view), [4 tests nativos](https://drive.google.com/file/d/1KbKh8I9snFalMdLLvtFpNLKZMHqM-d-A/view), [log de compilación](https://drive.google.com/file/d/1Hiig02Q4cpeGPDgKC9LlplbDGncocNT3/view). La cola exclusiva NEO se usó con un único job; no se creó otra versión del emulador.
+
+
 # R12 — Hardware común NEO/NEO2: integración de código y límite nativo
 Fecha: 2026-11-15. Destino exclusivo: `neo-diag` en `/home/spc/Projects/alphasmart/neo-diag`.
 
