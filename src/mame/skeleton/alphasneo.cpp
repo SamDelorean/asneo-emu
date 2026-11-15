@@ -87,6 +87,7 @@ private:
     emu_timer *m_usb_timer=nullptr;
     std::array<emu_timer *,2> m_compare_timers{};
     void update_vz_irq();
+    void update_usb_irq();
     void update_keyboard_irq(bool transition);
     u8 port_d_pins();
     void update_vz_clock();
@@ -111,8 +112,15 @@ private:
     void vz_w(offs_t offset,u16 data,u16 mem_mask=0xffff);
     u8 vz_read8(u16 reg);
     void vz_write8(u16 reg,u8 value);
-    u16 usb_r(offs_t offset,u16 mem_mask=0xffff) {return m_usb.read(u16(offset<<1));}
-    void usb_w(offs_t offset,u16 data,u16 mem_mask=0xffff) {m_usb.write(u16(offset<<1),data,mem_mask);}
+    u16 usb_r(offs_t offset,u16 mem_mask=0xffff) {
+        const u16 result=m_usb.read(u16(offset<<1));
+        update_usb_irq(); // read-to-ack side effects may deassert silicon INT
+        return result;
+    }
+    void usb_w(offs_t offset,u16 data,u16 mem_mask=0xffff) {
+        m_usb.write(u16(offset<<1),data,mem_mask);
+        update_usb_irq(); // masked/W1C host and device IRQ register changes
+    }
     u16 lcd_left_r(offs_t offset,u16 mem_mask=0xffff) {return lcd_read(0,mem_mask);}
     u16 lcd_right_r(offs_t offset,u16 mem_mask=0xffff) {return lcd_read(1,mem_mask);}
     void lcd_left_w(offs_t offset,u16 value,u16 mem_mask=0xffff) {lcd_write(0,value,mem_mask);}
@@ -223,6 +231,14 @@ void alphasneo_state::update_vz_irq() {
     for(unsigned level=1;level<=6;++level)
         m_cpu->set_input_line(level,m_vz.irq_at_level(level)?ASSERT_LINE:CLEAR_LINE);
 }
+void alphasneo_state::update_usb_irq() {
+    // NEO13 original firmware unmasks only VZ external INT5 (IMR
+    // 0x00EFFFDD) while enabling the ISP1763 ATL interrupt (HCINTEN=0x0100).
+    // Reuse Dana's chip-INT-to-VZ pending line model, but not Dana IRQ2/3.
+    // INT5 is a level source: W1C of ISP1763 HC/DC IRQ clears it.
+    m_vz.set_pending(0x00100000U,m_usb.controller_interrupt());
+    update_vz_irq();
+}
 void alphasneo_state::update_serial_clock() {
     // VZ internal clock only; unattached NEO serial pins/UCLK are not fabricated.
     const u32 hz=m_vz.sysclk_hz();
@@ -277,6 +293,7 @@ TIMER_CALLBACK_MEMBER(alphasneo_state::usb_service) {
     m_usb_link->poll([this](u8 op,u8 addr,u8 ep,u8 flags,const u8 *out,u8 *in,u16 length) {
         return m_usb.upstream(op,addr,ep,flags,out,in,length);
     });
+    update_usb_irq(); // propagate newly completed ATL/PTD or DC events
 }
 TIMER_CALLBACK_MEMBER(alphasneo_state::clk32_tick) {
     m_vz.advance_clk32();
@@ -417,7 +434,8 @@ void alphasneo_state::mem_map(address_map &map) {
     map(0x01008000,0x01008001).rw(FUNC(alphasneo_state::lcd_left_r),FUNC(alphasneo_state::lcd_left_w));
     map(0xfffff000,0xffffffff).rw(FUNC(alphasneo_state::vz_r),FUNC(alphasneo_state::vz_w));
     // NEO13 original firmware: ISP1763 at Group-D board MMIO, offsets 0x00..0xFF.
-    // Board IRQ wiring and USB packet peers remain explicitly disconnected.
+    // NEO13 USB INT5 is mapped from original firmware IMR/HCINTEN evidence;
+    // peripheral packet peers require explicit mounting as in Dana.
     map(0x02000000,0x020000ff).rw(FUNC(alphasneo_state::usb_r),FUNC(alphasneo_state::usb_w));
 }
 static INPUT_PORTS_START( asneo )
