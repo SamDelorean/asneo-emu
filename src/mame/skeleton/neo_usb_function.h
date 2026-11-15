@@ -89,7 +89,7 @@ struct usb_function {
             }
         } else if(type==0x20&&kind==1) {
             if(request==0) {
-                static constexpr char id[]="MFG:DANA-emu;MDL:Virtual USB Printer;CMD:PCL,POSTSCRIPT;CLS:PRINTER;";
+                static constexpr char id[]="MFG:NEO-emu;MDL:Virtual USB Printer;CMD:PCL,POSTSCRIPT;CLS:PRINTER;";
                 unsigned const n=sizeof(id)-1;
                 control[0]=byte((n+2)>>8);control[1]=byte(n+2);
                 std::copy_n(reinterpret_cast<byte const *>(id),n,control+2);
