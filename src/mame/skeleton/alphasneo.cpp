@@ -132,6 +132,7 @@ void alphasneo_state::machine_start() {
     m_nor.attach(m_flash.data(),m_flash.size());
     m_registers.fill(0);
     m_clk32_timer=timer_alloc(FUNC(alphasneo_state::clk32_tick),this);
+    m_usb_timer=timer_alloc(FUNC(alphasneo_state::usb_service),this);
     m_compare_timers[0]=timer_alloc(FUNC(alphasneo_state::timer1_compare),this);
     m_compare_timers[1]=timer_alloc(FUNC(alphasneo_state::timer2_compare),this);
     std::string error;
@@ -186,6 +187,7 @@ void alphasneo_state::machine_reset() {
     for(auto &t:m_compare_timers)t->adjust(attotime::never);
     m_clk32_timer->adjust(attotime::from_hz(neo::vz_core::xtal_hz),0,
         attotime::from_hz(neo::vz_core::xtal_hz));
+    m_usb_timer->adjust(attotime::from_msec(1),0,attotime::from_msec(1));
     update_vz_irq();
     // SmallROM mirror is needed for the actual 68k reset vector fetch.
     std::copy_n(m_flash.begin(),0x100,m_sram.begin());
