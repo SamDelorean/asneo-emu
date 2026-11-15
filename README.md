@@ -1,4 +1,4 @@
-**Estado vigente R6 (2026-11-14):** un solo `neo-diag` compilado y verificado en T640, dos ROM privadas BOOT/WRITER con mapeo físico corregido; System 3 ejecuta UI real y acepta la tecla Y. El sistema solicita Enter para reiniciar; AlphaWord todavía no acreditado. [Evidencias R6](docs/R6_FLASH_SEGMENT_ALIGNMENT_20261114.md). La nota histórica R0 siguiente no describe el estado vigente.
+**Estado vigente R11 (2026-11-15):** un solo `neo-diag` MAME 0.289 compilado, instalado y ejecutando el firmware NEO 2013. Las dos ROM privadas BOOT/WRITER se verificaron; la matriz NEO 16×8 (80 teclas ocupadas) está integrada, las IRQ despiertan al CPU de `STOP` y AlphaWord Plus acepta `TEST` mediante teclado físico emulado. Captura LCD y persistencia del texto después de reiniciar con NVRAM aislada: PASS. Ejecutable T640 SHA-256 `eecd47ad87c6c55b4ea6a68a39e221c938ec9490d2c8c18d0782f8e3d42286cc`. [Evidencia y límites R11](docs/R11_COMPLETE_KEYBOARD_AND_WAKE_20261114.md). Las notas históricas R0/R6 siguientes no describen el estado vigente.
 
 # asneo-emu — AlphaSmart NEO / NEO2 MAME emulator
 
