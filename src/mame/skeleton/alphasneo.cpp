@@ -21,6 +21,9 @@
 #include "neo_vz_uart.h"
 #include "neo_nor.h"
 #include "neo_isp1763.h"
+#include "neo_usb_function.h"
+#include "neo_usb_link.h"
+#include "imagedev/printer.h"
 #include "machine/nvram.h"
 
 #include <algorithm>
@@ -46,6 +49,7 @@ public:
 DEFINE_DEVICE_TYPE(NEO_VZ_CPU,neo_vz_cpu_device,"neo_vz_cpu","AlphaSmart NEO VZ bus")
 DEFINE_DEVICE_TYPE(NEO_VZ_UART,neo_vz_uart_device,"neo_vz_uart","MC68VZ328 UART (NEO)")
 DEFINE_DEVICE_TYPE(NEO_SERIAL_PEER,neo_serial_peer_device,"neo_serial_peer","NEO mounted serial/IrDA peer")
+DEFINE_DEVICE_TYPE(NEO_USB_LINK,neo_usb_link_device,"neo_usb_link","NEO explicit computer USB link")
 
 namespace {
 class alphasneo_state : public driver_device {
@@ -53,6 +57,7 @@ public:
     alphasneo_state(const machine_config &cfg,device_type type,const char *tag)
         :driver_device(cfg,type,tag),m_cpu(*this,"maincpu"),
          m_uart(*this,"uart%u",0U),m_serial_peer(*this,"serial_peer%u",0U),
+         m_usb_printer(*this,"usbprinter"),m_usb_link(*this,"usbcomputer"),
          m_rows(*this,"ROW%u",0U),m_nor_config(*this,"NOR_PROFILE"),
          m_flash_nvram(*this,"flashnv"),m_ram_nvram(*this,"ramnv") {}
     void asneo(machine_config &cfg);
@@ -64,6 +69,8 @@ private:
     required_device<neo_vz_cpu_device> m_cpu;
     required_device_array<neo_vz_uart_device,2> m_uart;
     required_device_array<neo_serial_peer_device,2> m_serial_peer;
+    required_device<printer_image_device> m_usb_printer;
+    required_device<neo_usb_link_device> m_usb_link;
     required_ioport_array<16> m_rows;
     required_ioport m_nor_config;
     required_device<nvram_device> m_flash_nvram;
@@ -75,7 +82,9 @@ private:
     neo::lcd m_lcd;
     neo::vz_core m_vz;
     neo::isp1763 m_usb;
+    neo_usb::usb_function m_printer_function;
     emu_timer *m_clk32_timer=nullptr;
+    emu_timer *m_usb_timer=nullptr;
     std::array<emu_timer *,2> m_compare_timers{};
     void update_vz_irq();
     void update_keyboard_irq(bool transition);
@@ -85,6 +94,7 @@ private:
     u16 timer_count(unsigned n) const;
     void timer_schedule(unsigned n);
     TIMER_CALLBACK_MEMBER(clk32_tick);
+    TIMER_CALLBACK_MEMBER(usb_service);
     TIMER_CALLBACK_MEMBER(timer1_compare);
     TIMER_CALLBACK_MEMBER(timer2_compare);
     void cpu_space_map(address_map &map) ATTR_COLD;
@@ -162,6 +172,7 @@ void alphasneo_state::nvram_seed_flash(nvram_device &,void *base,size_t size) {
 void alphasneo_state::machine_reset() {
     if(!m_firmware_valid)return;
     m_keyboard.reset();m_lcd.reset();m_usb.reset();m_registers.fill(0);
+    m_printer_function=neo_usb::usb_function{};
     m_pd_last_pins=0xff; m_pd_edges=0;
     m_nor.select_profile((m_nor_config->read()&1)?
         neo::nor_flash::profile::m29w320eb:
@@ -244,6 +255,25 @@ TIMER_CALLBACK_MEMBER(alphasneo_state::timer1_compare) {
 }
 TIMER_CALLBACK_MEMBER(alphasneo_state::timer2_compare) {
     m_vz.compare(1);update_vz_irq();timer_schedule(1);
+}
+TIMER_CALLBACK_MEMBER(alphasneo_state::usb_service) {
+    const bool attached=m_usb_printer->is_open()&&m_usb_printer->is_ready();
+    if(attached!=m_usb.host_attached()){
+        m_usb.set_host_attached(attached);
+        m_printer_function=neo_usb::usb_function{};
+        m_printer_function.kind=attached?1:0;
+        logerror("NEO_USB_PRINTER_ATTACH connected=%u\n",unsigned(attached));
+    }
+    m_usb.service_host([this](neo_usb::transaction const &tx,const u8 *out,u8 *in,u16 length) {
+        return m_printer_function.transfer(tx,out,in,length,[this](u8 value)->bool {
+            if(!m_usb_printer->is_ready())return false;
+            m_usb_printer->output(value);
+            return true;
+        });
+    });
+    m_usb_link->poll([this](u8 op,u8 addr,u8 ep,u8 flags,const u8 *out,u8 *in,u16 length) {
+        return m_usb.upstream(op,addr,ep,flags,out,in,length);
+    });
 }
 TIMER_CALLBACK_MEMBER(alphasneo_state::clk32_tick) {
     m_vz.advance_clk32();
@@ -555,6 +585,8 @@ void alphasneo_state::asneo(machine_config &cfg) {
         m_serial_peer[n]->output().set([this,n](int v){m_uart[n]->rxpin_w(v);});
         m_serial_peer[n]->cts().set([this,n](int v){m_uart[n]->cts_w(v);});
     }
+    PRINTER(cfg,m_usb_printer);
+    NEO_USB_LINK(cfg,m_usb_link);
     // 33 MHz is the current neo-re timing reference, not physically certified.
     NEO_VZ_CPU(cfg,m_cpu,33'000'000);
     m_cpu->set_addrmap(AS_PROGRAM,&alphasneo_state::mem_map);
