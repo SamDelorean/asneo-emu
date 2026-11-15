@@ -84,7 +84,6 @@ public:
             m_regs[offset/2]=v&0x1f;return;
         }
         case 0x04: {
-            auto &ep=m_ep[ep_index()];
             u16 const size=data&0x7ff;
             if(size && size<=1024)resize_endpoint(ep_index(),size);
             m_regs[offset/2]=data;return;
