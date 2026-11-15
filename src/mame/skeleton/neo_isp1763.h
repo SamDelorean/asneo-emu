@@ -34,6 +34,7 @@ public:
         m_attached=false;m_vbus=false;m_suspended=false;
         m_atl_done=0;m_device_address=0;m_requested_address=0;
         m_address_pending=false;m_root_reset_pending=false;m_ms=0;m_root_reset_until=0;
+        m_port_link=false;m_port_connect_pending=false;m_port_connect_at=0;
     }
     // ISP1763 CPU bus is 16-bit; 32-bit registers are LOW word then HIGH word.
     // Firmware explicitly exchanges word halves when constructing a BE 68k dword.
@@ -53,7 +54,7 @@ public:
             const u16 raw=m_regs[0xa0/2];
             const u16 physical_fs_dp=0x0800U;
             return u16((raw&~u16(0x0c00)) |
-                ((m_attached && (raw&0x1000U))?physical_fs_dp:0U));
+                ((m_port_link && (raw&0x1000U))?physical_fs_dp:0U));
         }
         case 0xC4:return m_hc_addr;
         case 0xC6:return host_transfer(0,false);
@@ -89,9 +90,24 @@ public:
             // Reuse Dana's asynchronous root-port reset/connection timing.
             // ISP1763 PORTSC uses one external downstream port, not Dana's two.
             const u16 old=m_regs[0xa0/2];
-            u16 next=u16((old & 0x0007U) | ((data&mask)&0x1ff8U));
-            if((data&mask)&0x0002)next &=~u16(0x0002); // W1C change
-            if((data&mask)&0x0100){ // port RESET, not instantaneous enable
+            // ECCS/PED/ECSC are silicon-owned. W1C clears only ECSC.
+            // D+/D- LS[1:0] are read-only and sampled from the powered link.
+            u16 next=u16((old&0x0007U)|((data&mask)&u16(0x13f8U)));
+            if((data&mask)&0x0002U)next &=~u16(0x0002); // W1C
+            const bool was_powered=bool(old&0x1000U);
+            const bool now_powered=bool(next&0x1000U);
+            if(!now_powered){
+                next&=~u16(0x0007);
+                m_port_link=false;m_port_connect_pending=false;
+                m_root_reset_pending=false;
+            } else if(!was_powered && m_attached){
+                // ISP1763A PORTSC §10.1.6: do not report the peripheral
+                // until host power is stable (specified maximum 20 ms).
+                next&=~u16(0x0007);
+                m_port_link=false;m_port_connect_pending=true;
+                m_port_connect_at=m_ms+20;
+            }
+            if((data&mask)&0x0100U){ // physical port RESET
                 next=u16((next|u16(0x0100))&~u16(0x0004));
                 m_root_reset_pending=true;m_root_reset_until=m_ms+10;
             }
@@ -163,20 +179,38 @@ public:
     void set_host_attached(bool attached) {
         if(attached==m_attached)return;
         m_attached=attached;
-        if(!attached)m_root_reset_pending=false;
         auto &port=m_regs[0xa0/2];
-        port=u16((port&~u16(0x0005))|(attached?0x0001:0x0000)|0x0002);
-        m_host_irq|=0x0010; // EHCI operational register change
+        if(!attached){
+            m_port_connect_pending=false;m_root_reset_pending=false;
+            if(m_port_link){
+                m_port_link=false;
+                port=u16((port&~u16(0x0005))|u16(0x0002));
+                m_host_irq|=0x0010;
+            }
+        } else if(port&0x1000U) {
+            // A mounted MAME printer is a connected physical device, not
+            // an unconditional USB ACK. Wait for the real powered bus.
+            m_port_connect_pending=true;m_port_connect_at=m_ms+20;
+        }
     }
     // This is the native 1-ms USB service tick; it must be driven by MAME's
     // existing USB timer and not by host wall-clock polling or a fake IRQ.
     void tick_1ms() {
         ++m_ms;
+        if(m_port_connect_pending && m_ms>=m_port_connect_at){
+            m_port_connect_pending=false;
+            auto &port=m_regs[0xa0/2];
+            if(m_attached && (port&0x1000U)){
+                m_port_link=true;
+                port|=u16(0x0003); // full-speed connect + ECSC latch
+                m_host_irq|=0x0010;
+            }
+        }
         if(m_root_reset_pending && m_ms>=m_root_reset_until) {
             m_root_reset_pending=false;
             auto &port=m_regs[0xa0/2];
             port=u16(port&~u16(0x0100));
-            if(m_attached && (port&0x1000))port|=u16(0x0004);
+            if(m_port_link && (port&0x1000))port|=u16(0x0004);
             else port&=~u16(0x0004);
             port|=u16(0x0002); // connection/enable change
             m_host_irq|=0x0010;
@@ -312,6 +346,8 @@ private:
     u8 m_ep_select=0x20,m_dma_ep=0;
     bool m_unlocked=true;
     bool m_attached=false,m_vbus=false,m_suspended=false;
+    bool m_port_link=false,m_port_connect_pending=false;
+    u32 m_port_connect_at=0;
     u8 m_device_address=0,m_requested_address=0;
     bool m_address_pending=false,m_root_reset_pending=false;
     u32 m_ms=0,m_root_reset_until=0;
@@ -345,7 +381,8 @@ private:
     }
     void reset_host(){
         m_host_ram.fill(0);m_hc_addr=m_host_irq=m_host_enable=m_atl_done=0;
-        m_root_reset_pending=false;
+        m_root_reset_pending=false;m_port_link=false;m_port_connect_pending=false;
+        m_regs[0xa0/2]=0;
         m_regs[0xb2/2]=m_regs[0xac/2]=m_regs[0xa6/2]=0xffff;
         m_regs[0xd4/2]=0x40;
     }
