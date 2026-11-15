@@ -44,7 +44,17 @@ public:
         case 0x72:return u16(chip_id>>16);
         case 0x00:return m_regs[0];
         case 0xB0:{const u16 done=m_atl_done;m_atl_done=0;return done;}
-        case 0xA0:return m_regs[0xa0/2];
+        case 0xA0: {
+            // ISP1763A Rev04 PORTSC1 LS[1:0] (bits 11:10) report
+            // actual DP/DM levels; the attached full-speed printer asserts
+            // D+ (bit 11). These read-only bits are not software latch bits.
+            // The 2013 OS3K Usb1763.c:2671 check reads PORTSC1, so report
+            // silicon line state rather than hardcoding its expected word.
+            const u16 raw=m_regs[0xa0/2];
+            const u16 physical_fs_dp=0x0800U;
+            return u16((raw&~u16(0x0c00)) |
+                ((m_attached && (raw&0x1000U))?physical_fs_dp:0U));
+        }
         case 0xC4:return m_hc_addr;
         case 0xC6:return host_transfer(0,false);
         case 0xD4:return m_host_irq|0x40;
