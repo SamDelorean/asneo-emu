@@ -215,6 +215,7 @@ public:
     neo_usb::reply upstream(u8 op,u8 addr,u8 endpoint,u8 flags,
                            const u8 *out,u8 *in,u16 length) {
         using namespace neo_usb;
+        (void)flags; // framing flag interpreted by mounted USB peer
         if(op==1) {m_vbus=true;m_suspended=false;m_device_irq|=0x80;return {handshake::ack,0};}
         if(op==2) {m_vbus=false;m_suspended=false;return {handshake::ack,0};}
         if(op==0x10) {
