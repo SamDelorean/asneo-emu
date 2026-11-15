@@ -47,7 +47,15 @@ int main(){
     assert(c.read(0xb0)==0);
     c.set_host_attached(true);
     assert(c.read(0xa0)&1);
+    // No power: line status is not driven by the virtual host VBUS.
+    assert((c.read(0xa0)&0x0c00)==0);
     assert(c.service_host(trans)==0); // port not yet reset/enabled
+    c.write(0xa0,0x1000); // power enables attached full-speed D+ line
+    // OS3K firmware checks this port status at Usb1763.c:2671.
+    assert(c.read(0xa0)==0x1803);
+    // Line status is read-only; software writes do not spoof DP/DM pins.
+    c.write(0xa0,0x1800);
+    assert(c.read(0xa0)==0x1803);
     c.write(0xa0,0x1100); // power on + physical reset
     for(unsigned ms=0;ms<9;++ms)c.tick_1ms();
     assert((c.read(0xa0)&0x104)==0x100); // reset still asserted
@@ -77,6 +85,7 @@ int main(){
     assert(!(c.read(0xd4)&0x100));
     c.set_host_attached(false);
     assert(!(c.read(0xa0)&1));
+    assert((c.read(0xa0)&0x0c00)==0);
     ptd(c,0,1,1,sizeof(text),true);
     assert(c.service_host(trans)==0); // no printer => no ACK
     // Independent upstream/PC port. Descriptors come from the guest firmware.
