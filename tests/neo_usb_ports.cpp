@@ -58,6 +58,8 @@ int main(){
     // Line status is read-only; software writes do not spoof DP/DM pins.
     c.write(0xa0,0x1800);
     assert(c.read(0xa0)==0x1803);
+    c.write(0xd6,0x0100); // firmware enables ATL IRQ5 output
+    assert(!c.controller_interrupt());
     c.write(0xa0,0x1100); // power on + physical reset
     for(unsigned ms=0;ms<9;++ms)c.tick_1ms();
     assert((c.read(0xa0)&0x104)==0x100); // reset still asserted
@@ -65,6 +67,7 @@ int main(){
     c.tick_1ms();
     assert((c.read(0xa0)&0x104)==0x004); // enabled after 10 ms
     assert(c.service_host(trans)==1);
+    assert(c.controller_interrupt()); // native chip INT rises only after ATL completion
     assert(c.read(0xb0)==1 && c.read(0xb0)==0);
     assert(printer.address==0);
     ptd(c,1,0,0,0,true); // control status IN, address latched on ACK
@@ -85,6 +88,7 @@ int main(){
     assert(c.read(0xd4)&0x100);
     c.write(0xd4,0x100);
     assert(!(c.read(0xd4)&0x100));
+    assert(!c.controller_interrupt()); // ISP1763 W1C lowers INT5
     c.set_host_attached(false);
     assert(!(c.read(0xa0)&1));
     assert((c.read(0xa0)&0x0c00)==0);
