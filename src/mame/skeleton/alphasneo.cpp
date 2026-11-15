@@ -20,6 +20,7 @@
 #include "neo_vz_core.h"
 #include "neo_vz_uart.h"
 #include "neo_nor.h"
+#include "neo_isp1763.h"
 #include "machine/nvram.h"
 
 #include <algorithm>
@@ -73,6 +74,7 @@ private:
     neo::keyboard m_keyboard;
     neo::lcd m_lcd;
     neo::vz_core m_vz;
+    neo::isp1763 m_usb;
     emu_timer *m_clk32_timer=nullptr;
     std::array<emu_timer *,2> m_compare_timers{};
     void update_vz_irq();
@@ -99,6 +101,8 @@ private:
     void vz_w(offs_t offset,u16 data,u16 mem_mask=0xffff);
     u8 vz_read8(u16 reg);
     void vz_write8(u16 reg,u8 value);
+    u16 usb_r(offs_t offset,u16 mem_mask=0xffff) {return m_usb.read(u16(offset<<1));}
+    void usb_w(offs_t offset,u16 data,u16 mem_mask=0xffff) {m_usb.write(u16(offset<<1),data,mem_mask);}
     u16 lcd_left_r(offs_t offset,u16 mem_mask=0xffff) {return lcd_read(0,mem_mask);}
     u16 lcd_right_r(offs_t offset,u16 mem_mask=0xffff) {return lcd_read(1,mem_mask);}
     void lcd_left_w(offs_t offset,u16 value,u16 mem_mask=0xffff) {lcd_write(0,value,mem_mask);}
@@ -157,7 +161,7 @@ void alphasneo_state::nvram_seed_flash(nvram_device &,void *base,size_t size) {
 }
 void alphasneo_state::machine_reset() {
     if(!m_firmware_valid)return;
-    m_keyboard.reset();m_lcd.reset();m_registers.fill(0);
+    m_keyboard.reset();m_lcd.reset();m_usb.reset();m_registers.fill(0);
     m_pd_last_pins=0xff; m_pd_edges=0;
     m_nor.select_profile((m_nor_config->read()&1)?
         neo::nor_flash::profile::m29w320eb:
@@ -379,7 +383,9 @@ void alphasneo_state::mem_map(address_map &map) {
     map(0x01000000,0x01000001).rw(FUNC(alphasneo_state::lcd_right_r),FUNC(alphasneo_state::lcd_right_w));
     map(0x01008000,0x01008001).rw(FUNC(alphasneo_state::lcd_left_r),FUNC(alphasneo_state::lcd_left_w));
     map(0xfffff000,0xffffffff).rw(FUNC(alphasneo_state::vz_r),FUNC(alphasneo_state::vz_w));
-    // ASIC 0x02000000, NOR CFI and external IRQ GPIO are still unmodeled.
+    // NEO13 original firmware: ISP1763 at Group-D board MMIO, offsets 0x00..0xFF.
+    // Board IRQ wiring and USB packet peers remain explicitly disconnected.
+    map(0x02000000,0x020000ff).rw(FUNC(alphasneo_state::usb_r),FUNC(alphasneo_state::usb_w));
 }
 static INPUT_PORTS_START( asneo )
     PORT_START("NOR_PROFILE")
