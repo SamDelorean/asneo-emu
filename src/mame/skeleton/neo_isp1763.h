@@ -22,7 +22,8 @@ public:
     isp1763(){reset();}
     void reset() {
         m_regs.fill(0);m_host_ram.fill(0);m_dc_ram.fill(0);
-        m_ep={};m_hc_addr=0;m_ep_select=0x20;m_dma_ep=0;
+        m_ep={};for(std::size_t i=0;i<m_ep.size();++i){m_ep[i].base=u16(i*64);m_ep[i].capacity=64;}
+        m_hc_addr=0;m_ep_select=0x20;m_dma_ep=0;
         m_host_irq=m_host_enable=0;m_device_irq=m_device_enable=0;
         m_unlocked=true;m_regs[0x80/2]=0x001e;
         m_regs[0xD4/2]=0x0040; // HC CLK_READY after reset
@@ -85,9 +86,7 @@ public:
         case 0x04: {
             auto &ep=m_ep[ep_index()];
             u16 const size=data&0x7ff;
-            if(size && size<=1024 && ep.base+size<=device_ram_size){
-                ep.capacity=size;ep.length=0;ep.cursor=0;
-            }
+            if(size && size<=1024)resize_endpoint(ep_index(),size);
             m_regs[offset/2]=data;return;
         }
         default:
@@ -104,7 +103,7 @@ public:
         if(ep.base+count>m_dc_ram.size())return false;
         std::copy_n(bytes,count,m_dc_ram.begin()+ep.base);
         ep.length=count;ep.cursor=0;ep.ready=true;
-        m_device_irq |= (u32(1)<<(10+endpoint));
+        m_device_irq |= endpoint==16?u32(1)<<8:u32(1)<<(10+endpoint);
         return true;
     }
     bool take_in(u8 endpoint,u8 *bytes,u16 &count) {
@@ -113,7 +112,7 @@ public:
         if(!ep.ready||ep.halted||ep.length>count)return false;
         std::copy_n(m_dc_ram.begin()+ep.base,ep.length,bytes);
         count=ep.length;ep.ready=false;ep.length=0;ep.cursor=0;
-        m_device_irq |= (u32(1)<<(10+endpoint));
+        m_device_irq |= endpoint==16?u32(1)<<8:u32(1)<<(10+endpoint);
         return true;
     }
     bool irq() const {return bool((m_device_irq&m_device_enable) || (m_host_irq&m_host_enable));}
@@ -124,12 +123,29 @@ private:
     std::array<u16,0x80>m_regs{};
     std::array<u8,host_ram_size>m_host_ram{};
     std::array<u8,device_ram_size>m_dc_ram{};
-    std::array<endpoint_state,16>m_ep{};
+    std::array<endpoint_state,17>m_ep{};
     u16 m_hc_addr=0,m_host_irq=0,m_host_enable=0;
     u32 m_device_irq=0,m_device_enable=0;
     u8 m_ep_select=0x20,m_dma_ep=0;
     bool m_unlocked=true;
-    std::size_t ep_index() const {return ((m_ep_select&0x0f)%16);}
+    std::size_t ep_index() const {return (m_ep_select&0x20)?16:std::size_t(m_ep_select&0x0f);}
+    bool resize_endpoint(std::size_t which,u16 size){
+        std::size_t total=0;
+        for(std::size_t i=0;i<m_ep.size();++i)total+=(i==which)?size:m_ep[i].capacity;
+        if(total>device_ram_size)return false;
+        std::array<u8,device_ram_size> next{};
+        std::size_t base=0;
+        for(std::size_t i=0;i<m_ep.size();++i){
+            auto &e=m_ep[i];
+            const u16 new_capacity=i==which?size:e.capacity;
+            const u16 copy=u16(std::min<u16>(e.length,new_capacity));
+            if(copy)std::copy_n(m_dc_ram.begin()+e.base,copy,next.begin()+base);
+            e.base=u16(base);e.capacity=new_capacity;e.length=copy;
+            e.cursor=std::min<u16>(e.cursor,copy);
+            base+=new_capacity;
+        }
+        m_dc_ram=next;return true;
+    }
     void reset_host(){
         m_host_ram.fill(0);m_hc_addr=m_host_irq=m_host_enable=0;
         m_regs[0xd4/2]=0x40;
