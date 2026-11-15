@@ -6,6 +6,16 @@
 int main() {
     neo::vz_core c;
     assert(c.read_word(0xf200).has_value());
+    // MC68VZ328UM §9.6.6: reset ILCR = 0x6533 (TMR2 level 3).
+    assert(c.read_word(0xf314).value()==0x6533);
+    c.set_pending(0x20,true);
+    assert(!c.irq_at_level(3)); // still masked after reset
+    assert(c.write_word(0xf306,0xffdf,0xffff));
+    assert(c.irq_at_level(3));  // TMR2 can wake 68k STOP
+    c.set_pending(0x20,false);
+    assert(!c.irq_at_level(3));
+    c.reset();
+
     assert(c.pll_hz() == 2U*(14U*(0x47+1)+3+1)*32768U);
     assert(c.read_word(0xf304).value() == 0x00ff);
     assert(c.read_word(0xf306).value() == 0xffff);

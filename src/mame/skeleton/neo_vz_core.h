@@ -18,7 +18,7 @@ public:
     };
     void reset() {
         m_pllcr=0x24b3; m_pllfsr=0x0347; m_pctlr=0x1f;
-        m_ivr=0; m_icr=0; m_ilcr=0; m_imr=0x00ffffff; m_pending=0;
+        m_ivr=0; m_icr=0; m_ilcr=0x6533; m_imr=0x00ffffff; m_pending=0;
         m_clk32_high=false; m_timers={};
         m_rtc_time=0; m_rtc_alarm=0; m_rtc_day=0; m_rtc_day_alarm=0;
         m_rtc_control=0x0080; m_rtc_ien=0; m_rtc_isr=0;

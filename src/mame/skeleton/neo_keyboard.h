@@ -27,16 +27,46 @@ inline constexpr std::array<std::array<std::uint8_t, 8>, 16> logical = {{
     {{ 0x08, 0xff, 0x1a, 0xff, 0xff, 0xff, 0x45, 0xff }},
     {{ 0x09, 0x11, 0x1b, 0x24, 0x30, 0x3a, 0x46, 0x4f }},
 }};
+inline constexpr std::array<std::uint8_t,0x51> logical_to_hid = {{ 0x30, 0x40, 0x2f, 0x2a, 0x3c, 0x39, 0x2b, 0x17, 0xe1, 0x1c, 0x3f, 0x34, 0xe3, 0x51, 0x3e, 0x3d, 0x0a, 0x0b, 0x0e, 0x0f, 0x33, 0x31, 0x07, 0x16, 0x04, 0x09, 0xff, 0x0d, 0x0c, 0x12, 0x13, 0x4a, 0x08, 0x1a, 0x14, 0x15, 0x18, 0x2e, 0xe2, 0x41, 0x2d, 0x58, 0xff, 0x42, 0x3b, 0x3a, 0x35, 0x22, 0x23, 0x25, 0x26, 0x27, 0x45, 0x43, 0x20, 0x1f, 0x1e, 0x21, 0x24, 0x36, 0xe6, 0x37, 0x4d, 0x44, 0x28, 0x06, 0x1b, 0x1d, 0x19, 0xe5, 0x10, 0x38, 0x29, 0x50, 0x4f, 0x52, 0x2c, 0xe0, 0x05, 0x11, 0x4c }};
+// Both tables are transcribed from the NEO 2013 firmware: 0x0044c37b
+// (matrix logical IDs), and 0x0043c32a (logical to USB-HID usage).
+// No alphabetical guessing of raw keyboard scan codes.
+constexpr std::size_t key_count() {
+    std::size_t n=0;
+    for(const auto &row:logical) for(auto code:row) if(code!=0xff) ++n;
+    return n;
+}
+static_assert(key_count()==80,"NEO has exactly 80 populated matrix cells");
+constexpr std::uint8_t hid(unsigned row,unsigned col) {
+    return row<16 && col<8 && logical[row][col]!=0xff ?
+        logical_to_hid[logical[row][col]] : 0xff;
+}
 
 } // namespace matrix
 
 class keyboard {
 public:
-    void reset() {m_rows=0;m_columns.fill(0xff);}
+    void reset() {m_rows=0;m_columns.fill(0xff);m_gpio_scanner_seen=false;}
     void gpio_write(std::uint16_t addr,std::uint8_t value) {
-        if(addr==0xf410) m_rows=(m_rows&~std::uint16_t(0x00ff))|reverse8(value);
-        else if(addr==0xf408) m_rows=(m_rows&~std::uint16_t(0x0200))|((value&0x20)?0x0200:0);
-        else if(addr==0xf440) {
+        // The SmallROM scanner can select a single row through PCDATA
+        // F411. Full System 3 uses the proven F410/F408/F440 row masks.
+        // After an actual GPIO-scanner write, do not let unrelated F411
+        // accesses override the active System3 matrix.
+        if(addr==0xf411 && !m_gpio_scanner_seen) {
+            m_rows=std::uint16_t(1U << (value&0x0f));
+            return;
+        }
+        if(addr==0xf410) {
+            if(!m_gpio_scanner_seen)m_rows=0;
+            m_gpio_scanner_seen=true;
+            m_rows=(m_rows&~std::uint16_t(0x00ff))|reverse8(value);
+        } else if(addr==0xf408) {
+            if(!m_gpio_scanner_seen)m_rows=0;
+            m_gpio_scanner_seen=true;
+            m_rows=(m_rows&~std::uint16_t(0x0200))|((value&0x20)?0x0200:0);
+        } else if(addr==0xf440) {
+            if(!m_gpio_scanner_seen)m_rows=0;
+            m_gpio_scanner_seen=true;
             std::uint16_t top=0;
             for(unsigned n=0;n<6;++n) if(value & (0x80>>n))top|=1U<<(10+n);
             m_rows=(m_rows&~std::uint16_t(0xfc00))|top;
@@ -55,6 +85,7 @@ public:
     static std::uint8_t logical(unsigned row,unsigned col) {
         return row<16 && col<8?matrix::logical[row][col]:0xff;
     }
+    static std::uint8_t hid(unsigned row,unsigned col) {return matrix::hid(row,col);}
 private:
     static std::uint8_t reverse8(std::uint8_t x) {
         std::uint8_t reversed=0;
@@ -66,5 +97,6 @@ private:
         0xff,0xff,0xff,0xff,0xff,0xff,0xff,0xff
     }};
     std::uint16_t m_rows=0;
+    bool m_gpio_scanner_seen=false;
 };
 } // namespace neo

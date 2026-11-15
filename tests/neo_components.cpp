@@ -25,6 +25,46 @@ int main() {
     assert(k.selected_rows()==(1u<<10));
     assert(neo::keyboard::logical(8,0)==0xff);
     assert(neo::keyboard::logical(0,0)==0x00);
+    assert(neo::matrix::key_count()==80);
+    // Full original 16x8 matrix, including all 48 unpopulated sites;
+    // verify electrical decoding for all 80 keys, not a series of
+    // single-key fixes. 0xff HID denotes two NEO-specific buttons.
+    unsigned scanned=0,empties=0;
+    for(unsigned row=0;row<16;++row) for(unsigned col=0;col<8;++col) {
+        neo::keyboard single; single.reset();
+        const auto logical=neo::keyboard::logical(row,col);
+        if(logical==0xff) {++empties;assert(neo::keyboard::hid(row,col)==0xff);continue;}
+        ++scanned;
+        const auto mask=std::uint8_t(1U<<col);
+        if(row<8)single.gpio_write(0xf410,std::uint8_t(0x80>>row));
+        else if(row==9)single.gpio_write(0xf408,0x20);
+        else if(row>=10)single.gpio_write(0xf440,std::uint8_t(0x80>>(row-10)));
+        else assert(false && "Row 8 must be electrically empty");
+        single.set_row(row,std::uint8_t(~mask));
+        assert(single.selected_rows()==(1U<<row));
+        assert(single.columns()==std::uint8_t(~mask));
+        single.set_row(row,0xff);
+        assert(single.columns()==0xff);
+    }
+    assert(scanned==80 && empties==48);
+    // SmallROM direct row decode F411 before System3 masks take over.
+    neo::keyboard small_scan;
+    small_scan.gpio_write(0xf411,0x0d); // original T raw=0x0d
+    small_scan.set_row(13,0xfe);
+    assert(small_scan.columns()==0xfe);
+    small_scan.gpio_write(0xf410,0x80); // now full System3 GPIO mode
+    assert(small_scan.selected_rows()==1 && small_scan.columns()==0xff);
+    small_scan.gpio_write(0xf411,0x0d); // no spurious override
+    assert(small_scan.selected_rows()==1);
+    // Exact firmware anchors and shifted modifiers, no guessed letters.
+    assert(neo::keyboard::hid(10,3)==0x08); // E raw=0x3a
+    assert(neo::keyboard::hid(13,3)==0x15); // R raw=0x3d
+    assert(neo::keyboard::hid(15,7)==0x11); // N raw=0x7f
+    assert(neo::keyboard::hid(0,3)==0x0c); // I raw=0x30
+    assert(neo::keyboard::hid(9,6)==0x28); // Enter
+    assert(neo::keyboard::hid(6,4)==0x58); // Applets
+    assert(neo::keyboard::hid(7,4)==0xff); // Send: no HID bridge
+
     neo::lcd lcd;
     lcd.command(0,0xb0);lcd.command(0,0x00);lcd.write(0,0x01);
     assert(lcd.pixel(0,0));
