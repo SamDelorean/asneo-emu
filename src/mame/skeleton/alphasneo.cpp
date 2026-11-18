@@ -19,6 +19,7 @@
 #include "neo_lcd.h"
 #include "neo_vz_core.h"
 #include "neo_vz_uart.h"
+#include "neo_vz_spi.h"
 #include "neo_nor.h"
 #include "neo_isp1763.h"
 #include "neo_usb_function.h"
@@ -81,13 +82,19 @@ private:
     neo::keyboard m_keyboard;
     neo::lcd m_lcd;
     neo::vz_core m_vz;
+    neo::vz_spi1 m_spi1;
+    neo::vz_spi2 m_spi2;
     neo::isp1763 m_usb;
     neo_usb::usb_function m_printer_function;
     emu_timer *m_clk32_timer=nullptr;
     emu_timer *m_usb_timer=nullptr;
+    emu_timer *m_spi1_timer=nullptr;
+    emu_timer *m_spi2_timer=nullptr;
     std::array<emu_timer *,2> m_compare_timers{};
     void update_vz_irq();
     void update_usb_irq();
+    void update_spi_irq();
+    void spi1_schedule();
     void update_keyboard_irq(bool transition);
     u8 port_d_pins();
     void update_vz_clock();
@@ -96,6 +103,8 @@ private:
     void timer_schedule(unsigned n);
     TIMER_CALLBACK_MEMBER(clk32_tick);
     TIMER_CALLBACK_MEMBER(usb_service);
+    TIMER_CALLBACK_MEMBER(spi1_bit);
+    TIMER_CALLBACK_MEMBER(spi2_complete);
     TIMER_CALLBACK_MEMBER(timer1_compare);
     TIMER_CALLBACK_MEMBER(timer2_compare);
     void cpu_space_map(address_map &map) ATTR_COLD;
@@ -141,6 +150,8 @@ void alphasneo_state::machine_start() {
     m_registers.fill(0);
     m_clk32_timer=timer_alloc(FUNC(alphasneo_state::clk32_tick),this);
     m_usb_timer=timer_alloc(FUNC(alphasneo_state::usb_service),this);
+    m_spi1_timer=timer_alloc(FUNC(alphasneo_state::spi1_bit),this);
+    m_spi2_timer=timer_alloc(FUNC(alphasneo_state::spi2_complete),this);
     m_compare_timers[0]=timer_alloc(FUNC(alphasneo_state::timer1_compare),this);
     m_compare_timers[1]=timer_alloc(FUNC(alphasneo_state::timer2_compare),this);
     std::string error;
@@ -181,6 +192,8 @@ void alphasneo_state::nvram_seed_flash(nvram_device &,void *base,size_t size) {
 void alphasneo_state::machine_reset() {
     if(!m_firmware_valid)return;
     m_keyboard.reset();m_lcd.reset();m_usb.reset();m_registers.fill(0);
+    m_spi1.reset();m_spi2.reset();
+    m_spi1_timer->adjust(attotime::never);m_spi2_timer->adjust(attotime::never);
     m_printer_function=neo_usb::usb_function{};
     m_pd_last_pins=0xff; m_pd_edges=0;
     m_nor.select_profile((m_nor_config->read()&1)?
@@ -239,6 +252,30 @@ void alphasneo_state::update_usb_irq() {
     m_vz.set_pending(0x00100000U,m_usb.controller_interrupt());
     update_vz_irq();
 }
+void alphasneo_state::update_spi_irq() {
+    // Motorola VZ SPI1 IRQ bit 21, routed by ILCR; same core as Dana.
+    m_vz.set_pending(0x00200000U,m_spi1.irq());
+    update_vz_irq();
+}
+void alphasneo_state::spi1_schedule() {
+    const u32 hz=m_vz.sysclk_hz();
+    if(!m_spi1.busy || !hz){m_spi1_timer->adjust(attotime::never);return;}
+    m_spi1_timer->adjust(attotime::from_ticks(m_spi1.bit_divisor(),hz));
+}
+TIMER_CALLBACK_MEMBER(alphasneo_state::spi1_bit) {
+    // The common VZ shift register runs even when no NEO2 RF is attached.
+    // Open-bus MISO is pulled high; no synthetic RF command/response.
+    bool const complete=m_spi1.shift_bit(true);
+    if(complete)
+        logerror("NEO_SPI1_OBSERVE tx=%04x rx=%04x count=%u\n",
+            m_spi1.word,m_spi1.received,m_spi1.words_sent);
+    update_spi_irq();
+    spi1_schedule();
+}
+TIMER_CALLBACK_MEMBER(alphasneo_state::spi2_complete) {
+    m_spi2.complete(0xffff);
+    logerror("NEO_SPI2_OBSERVE data=%04x count=%u\n",m_spi2.data,m_spi2.transfers);
+}
 void alphasneo_state::update_serial_clock() {
     // VZ internal clock only; unattached NEO serial pins/UCLK are not fabricated.
     const u32 hz=m_vz.sysclk_hz();
@@ -249,6 +286,7 @@ void alphasneo_state::update_vz_clock() {
     if(hz)m_cpu->set_unscaled_clock(hz);
     update_serial_clock();
     for(unsigned n=0;n<2;++n)timer_schedule(n);
+    if(m_spi1.busy)spi1_schedule();
 }
 u16 alphasneo_state::timer_count(unsigned n) const {
     auto const &t=m_vz.timer_state(n);
@@ -373,6 +411,13 @@ u16 alphasneo_state::vz_r(offs_t offset,u16 mask) {
     u16 r=0xf000+(offset<<1);
     // Forward the original MAME big-endian bus mask; RX FIFO only pops
     // on the low lane, per Dana's VZ peripheral implementation.
+    if(r>=0xf700 && r<=0xf70a){
+        const unsigned reg=(r-0xf700)>>1;
+        const u16 value=m_spi1.read(reg);
+        update_spi_irq();
+        return value;
+    }
+    if(r>=0xf800 && r<=0xf802)return m_spi2.read((r-0xf800)>>1);
     if(r>=0xf900 && r<=0xf90a)return m_uart[0]->read((r-0xf900)>>1,mask);
     if(r>=0xf910 && r<=0xf91c)return m_uart[1]->read((r-0xf910)>>1,mask);
     u16 result=0xffff;
@@ -382,6 +427,23 @@ u16 alphasneo_state::vz_r(offs_t offset,u16 mask) {
 }
 void alphasneo_state::vz_w(offs_t offset,u16 data,u16 mask) {
     u16 r=0xf000+(offset<<1);
+    if(r>=0xf700 && r<=0xf70a) {
+        const bool old_busy=m_spi1.busy;
+        m_spi1.write((r-0xf700)>>1,data,mask);
+        if(!old_busy && m_spi1.busy)spi1_schedule();
+        if(!m_spi1.busy)m_spi1_timer->adjust(attotime::never);
+        update_spi_irq();
+        return;
+    }
+    if(r>=0xf800 && r<=0xf802) {
+        m_spi2.write((r-0xf800)>>1,data,mask);
+        if(m_spi2.busy){
+            const u32 hz=m_vz.sysclk_hz();
+            const unsigned width=(m_spi2.control&0xf)+1;
+            m_spi2_timer->adjust(hz?attotime::from_ticks(u64(width)*4,hz):attotime::never);
+        }
+        return;
+    }
     if(r>=0xf900 && r<=0xf90a) {m_uart[0]->write((r-0xf900)>>1,data,mask);return;}
     if(r>=0xf910 && r<=0xf91c) {m_uart[1]->write((r-0xf910)>>1,data,mask);return;}
     if(mask&0xff00)vz_write8(r,data>>8);
