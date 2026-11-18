@@ -209,6 +209,13 @@ void alphasneo_state::nvram_seed_flash(nvram_device &,void *base,size_t size) {
 void alphasneo_state::machine_reset() {
     if(!m_firmware_valid)return;
     m_keyboard.reset();m_lcd.reset();m_usb.reset();m_registers.fill(0);
+    // VZ UM §10: real silicon pull-up and mux defaults, not Dana's
+    // board-specific post-bootstrap values.
+    m_registers[0x43a]=0xff;m_registers[0x43b]=0xef; // PJPUEN/PJSEL
+    m_registers[0x441]=0x0f;m_registers[0x442]=0xff;
+    m_registers[0x443]=0xff; // PK DATA/PUEN/SEL
+    m_registers[0x449]=0x20;m_registers[0x44a]=0x3f;
+    m_registers[0x44b]=0x3f; // PM DATA/PUEN/SEL
     m_spi1.reset();m_spi2.reset();m_pwm.reset();
     m_spi1_timer->adjust(attotime::never);m_spi2_timer->adjust(attotime::never);
     m_pwm1_timer->adjust(attotime::never);m_pwm1_fall_timer->adjust(attotime::never);
@@ -411,6 +418,19 @@ u8 alphasneo_state::vz_read8(u16 r) {
     if(r>=0xf418 && r<=0xf41f)return m_registers[r&0x0fff];
     if(r==0xf449)return m_registers[r&0xfff]|0x20;
     if(r==0xf410 || r==0xf411 || r==0xf408 || r==0xf440)return m_registers[r&0xfff];
+    // VZ GPIO ports B,C,D,E,F,G,J,K,M: expose all DIR/DATA/PUEN/SEL
+    // byte registers. Disconnected input pins read high; the board never
+    // synthesizes a wireless/SD response. Keyboard-controlled pins above
+    // retain their original scan-specific electrical model.
+    static constexpr u16 gpio_base[]={0xf408,0xf410,0xf418,0xf420,
+                                      0xf428,0xf430,0xf438,0xf440,0xf448};
+    for(u16 base:gpio_base)if(r>=base && r<base+4) {
+        const unsigned pos=r-base;
+        const u8 stored=m_registers[r&0xfff];
+        if(pos!=1)return stored;
+        const u8 direction=m_registers[base&0xfff];
+        return u8((stored&direction)|~direction);
+    }
     if(r==0xf608||r==0xf609) {
         auto value=timer_count(0);
         return r&1?u8(value):u8(value>>8);
@@ -441,6 +461,15 @@ void alphasneo_state::vz_write8(u16 r,u8 value) {
         m_registers[i]=v;
         if(r==0xf419)m_pd_edges&=~(value&m_registers[0x41f]);
         update_keyboard_irq(false);
+        return;
+    }
+    static constexpr u16 gpio_base[]={0xf408,0xf410,0xf418,0xf420,
+                                      0xf428,0xf430,0xf438,0xf440,0xf448};
+    for(u16 base:gpio_base)if(r>=base && r<base+4) {
+        const u8 old=m_registers[r&0xfff];
+        m_registers[r&0xfff]=value;
+        if(old!=value && r>=0xf420)
+            logerror("NEO_GPIO_OBSERVE reg=%04x old=%02x new=%02x\n",r,old,value);
         return;
     }
     const u16 aligned=r&u16(0xfffe);
