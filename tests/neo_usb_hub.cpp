@@ -60,6 +60,12 @@ int main(){
   ctl_setup(hub,2,{{0x23,1,20,0,2,0,0,0}});
   ctl_status_in(hub,2);
   assert(!(hub.hub_changes[2]&0x10));
+  printer.legacy_pcl_identity=true;
+  ctl_setup(printer,0,{{0x80,6,0,1,0,0,18,0}});
+  r=x(printer,0,neo_usb::pid::in,0,nullptr,data.data(),18,true);
+  assert(r.status==neo_usb::handshake::ack&&r.size==18);
+  assert(data[8]==0xf0 && data[9]==0x03 && data[10]==0x17 && data[11]==0x03);
+  ctl_status_out(printer,0);
   ctl_setup(printer,0,{{0,5,3,0,0,0,0,0}});
   ctl_status_in(printer,0);
   assert(printer.address==3);
