@@ -34,3 +34,6 @@ jobs:
           ${{ matrix.compiler }} -std=c++17 -Wall -Wextra -Werror -pedantic \
             -Isrc/mame/skeleton tests/neo_usb_ports.cpp -o /tmp/asneo-tests/usb_ports
           /tmp/asneo-tests/usb_ports
+          ${{ matrix.compiler }} -std=c++17 -Wall -Wextra -Werror -pedantic \
+            -Isrc/mame/skeleton tests/neo_vz_spi.cpp -o /tmp/asneo-tests/spi
+          /tmp/asneo-tests/spi
