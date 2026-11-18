@@ -62,6 +62,7 @@ public:
         :driver_device(cfg,type,tag),m_cpu(*this,"maincpu"),
          m_uart(*this,"uart%u",0U),m_serial_peer(*this,"serial_peer%u",0U),
          m_usb_printer(*this,"usbprinter"),m_usb_link(*this,"usbcomputer"),
+          m_usb_topology_port(*this,"USB_TOPOLOGY"),
           m_pwm_speaker(*this,"pwm1speaker"),
          m_rows(*this,"ROW%u",0U),m_nor_config(*this,"NOR_PROFILE"),
           m_board_config(*this,"BOARD_VARIANT"),
@@ -77,6 +78,7 @@ private:
     required_device_array<neo_serial_peer_device,2> m_serial_peer;
     required_device<printer_image_device> m_usb_printer;
     required_device<neo_usb_link_device> m_usb_link;
+    required_ioport m_usb_topology_port;
     required_device<speaker_sound_device> m_pwm_speaker;
     required_ioport_array<16> m_rows;
     required_ioport m_nor_config;
@@ -94,6 +96,8 @@ private:
     neo::vz_pwm m_pwm;
     neo::isp1763 m_usb;
     neo_usb::usb_function m_printer_function;
+    neo_usb::usb_function m_hub_function;
+    bool m_usb_hub_topology=false;
     emu_timer *m_clk32_timer=nullptr;
     emu_timer *m_usb_timer=nullptr;
     emu_timer *m_spi1_timer=nullptr;
@@ -225,6 +229,10 @@ void alphasneo_state::machine_reset() {
     m_pwm2_timer->adjust(attotime::never);
     m_pwm_speaker->level_w(0);
     m_printer_function=neo_usb::usb_function{};
+    m_hub_function=neo_usb::usb_function{};
+    m_hub_function.kind=3;
+    m_usb_hub_topology=bool(m_usb_topology_port->read()&1);
+    logerror("NEO_USB_TOPOLOGY=%s\n",m_usb_hub_topology?"HUB2_PRINTER":"DIRECT_PRINTER");
     m_pd_last_pins=0xff; m_pd_edges=0;
     m_neo2_selected=bool(m_board_config->read()&1);
     logerror("NEO_BOARD_SELECTED model=%s rf_hardware=DISCONNECTED\n",
@@ -387,14 +395,30 @@ TIMER_CALLBACK_MEMBER(alphasneo_state::usb_service) {
         m_usb.set_host_attached(attached);
         m_printer_function=neo_usb::usb_function{};
         m_printer_function.kind=attached?1:0;
-        logerror("NEO_USB_PRINTER_ATTACH connected=%u\n",unsigned(attached));
+        m_hub_function=neo_usb::usb_function{};
+        m_hub_function.kind=3;
+        m_hub_function.hub_attach(attached);
+        logerror("NEO_USB_PRINTER_ATTACH connected=%u topology=%s\n",
+            unsigned(attached),m_usb_hub_topology?"HUB2":"DIRECT");
     }
+    if(m_usb_hub_topology)m_hub_function.hub_tick_1ms();
     m_usb.service_host([this](neo_usb::transaction const &tx,const u8 *out,u8 *in,u16 length) {
-        return m_printer_function.transfer(tx,out,in,length,[this](u8 value)->bool {
+        const auto printer_sink=[this](u8 value)->bool {
             if(!m_usb_printer->is_ready())return false;
             m_usb_printer->output(value);
             return true;
-        });
+        };
+        if(m_usb_hub_topology) {
+            // Route the USB address to the real two-port hub, then to the
+            // enumerated class-7 printer attached to downstream port 2.
+            if(tx.address==m_hub_function.address)
+                return m_hub_function.transfer(tx,out,in,length,[](u8){return false;});
+            if(m_hub_function.hub_child_enabled() &&
+               tx.address==m_printer_function.address)
+                return m_printer_function.transfer(tx,out,in,length,printer_sink);
+            return neo_usb::reply{neo_usb::handshake::timeout,0};
+        }
+        return m_printer_function.transfer(tx,out,in,length,printer_sink);
     });
     m_usb_link->poll([this](u8 op,u8 addr,u8 ep,u8 flags,const u8 *out,u8 *in,u16 length) {
         return m_usb.upstream(op,addr,ep,flags,out,in,length);
@@ -597,6 +621,10 @@ void alphasneo_state::mem_map(address_map &map) {
     map(0x02000000,0x020000ff).rw(FUNC(alphasneo_state::usb_r),FUNC(alphasneo_state::usb_w));
 }
 static INPUT_PORTS_START( asneo )
+    PORT_START("USB_TOPOLOGY")
+    PORT_CONFNAME(0x01,0x00,"USB printer topology")
+    PORT_CONFSETTING(0x00,"Direct USB Printer")
+    PORT_CONFSETTING(0x01,"Two-port USB hub with printer on port 2")
     PORT_START("BOARD_VARIANT")
     PORT_CONFNAME(0x01,0x00,"Physical NEO board variant")
     PORT_CONFSETTING(0x00,"AlphaSmart NEO")
