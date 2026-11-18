@@ -98,6 +98,7 @@ private:
     neo_usb::usb_function m_printer_function;
     neo_usb::usb_function m_hub_function;
     bool m_usb_hub_topology=false;
+    u32 m_usb_packet_count=0;
     emu_timer *m_clk32_timer=nullptr;
     emu_timer *m_usb_timer=nullptr;
     emu_timer *m_spi1_timer=nullptr;
@@ -231,6 +232,7 @@ void alphasneo_state::machine_reset() {
     m_printer_function=neo_usb::usb_function{};
     m_hub_function=neo_usb::usb_function{};
     m_hub_function.kind=3;
+    m_usb_packet_count=0;
     m_usb_hub_topology=bool(m_usb_topology_port->read()&1);
     logerror("NEO_USB_TOPOLOGY=%s identity=%s\n",
         m_usb_hub_topology?"HUB2_PRINTER":"DIRECT_PRINTER",
@@ -411,17 +413,31 @@ TIMER_CALLBACK_MEMBER(alphasneo_state::usb_service) {
             m_usb_printer->output(value);
             return true;
         };
-        if(m_usb_hub_topology) {
-            // Route the USB address to the real two-port hub, then to the
-            // enumerated class-7 printer attached to downstream port 2.
-            if(tx.address==m_hub_function.address)
-                return m_hub_function.transfer(tx,out,in,length,[](u8){return false;});
-            if(m_hub_function.hub_child_enabled() &&
-               tx.address==m_printer_function.address)
-                return m_printer_function.transfer(tx,out,in,length,printer_sink);
-            return neo_usb::reply{neo_usb::handshake::timeout,0};
+        const neo_usb::reply answer=[&]() -> neo_usb::reply {
+            if(m_usb_hub_topology) {
+                // A USB hub is addressable; the printer receives a separate
+                // address only after the downstream port reset has finished.
+                if(tx.address==m_hub_function.address)
+                    return m_hub_function.transfer(tx,out,in,length,[](u8){return false;});
+                if(m_hub_function.hub_child_enabled() &&
+                   tx.address==m_printer_function.address)
+                    return m_printer_function.transfer(tx,out,in,length,printer_sink);
+                return {neo_usb::handshake::timeout,0};
+            }
+            return m_printer_function.transfer(tx,out,in,length,printer_sink);
+        }();
+        if(m_usb_packet_count<400) {
+            ++m_usb_packet_count;
+            logerror("NEO_USB_PACKET n=%u addr=%u ep=%u pid=%u size=%u reply=%u got=%u hub=%u hubaddr=%u port2=%04x childaddr=%u conf=%u printbytes=%u req=%02x,%02x,%02x,%02x\n",
+                m_usb_packet_count,tx.address,tx.endpoint,unsigned(tx.direction),
+                length,unsigned(answer.status),answer.size,unsigned(m_usb_hub_topology),
+                m_hub_function.address,m_hub_function.hub_status[2],
+                m_printer_function.address,m_printer_function.configuration,
+                m_printer_function.accepted_bytes,
+                out&&length>=8?out[0]:0,out&&length>=8?out[1]:0,
+                out&&length>=8?out[2]:0,out&&length>=8?out[3]:0);
         }
-        return m_printer_function.transfer(tx,out,in,length,printer_sink);
+        return answer;
     });
     m_usb_link->poll([this](u8 op,u8 addr,u8 ep,u8 flags,const u8 *out,u8 *in,u16 length) {
         return m_usb.upstream(op,addr,ep,flags,out,in,length);
