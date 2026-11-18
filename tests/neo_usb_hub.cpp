@@ -50,6 +50,13 @@ int main(){
   ctl_setup(hub,2,{{0x23,3,8,0,2,0,0,0}});
   ctl_status_in(hub,2);
   assert(!hub.hub_child_enabled());
+  // Original NEO13 immediately polls hub EP1 after port power.
+  // Both the hub configuration and C_CONNECTION must be committed.
+  std::array<u8,64> hub_bitmap{};
+  auto interrupt_reply=x(hub,2,neo_usb::pid::in,1,nullptr,
+                         hub_bitmap.data(),1,false);
+  assert(interrupt_reply.status==neo_usb::handshake::ack);
+  assert(interrupt_reply.size==1 && (hub_bitmap[0]&0x04));
   ctl_setup(hub,2,{{0x23,3,4,0,2,0,0,0}});
   ctl_status_in(hub,2);
   for(int i=0;i<9;++i){hub.hub_tick_1ms();assert(!hub.hub_child_enabled());}
