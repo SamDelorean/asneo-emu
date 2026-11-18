@@ -20,6 +20,9 @@
 #include "neo_vz_core.h"
 #include "neo_vz_uart.h"
 #include "neo_vz_spi.h"
+#include "neo_vz_pwm.h"
+#include "speaker.h"
+#include "sound/spkrdev.h"
 #include "neo_nor.h"
 #include "neo_isp1763.h"
 #include "neo_usb_function.h"
@@ -59,6 +62,7 @@ public:
         :driver_device(cfg,type,tag),m_cpu(*this,"maincpu"),
          m_uart(*this,"uart%u",0U),m_serial_peer(*this,"serial_peer%u",0U),
          m_usb_printer(*this,"usbprinter"),m_usb_link(*this,"usbcomputer"),
+          m_pwm_speaker(*this,"pwm1speaker"),
          m_rows(*this,"ROW%u",0U),m_nor_config(*this,"NOR_PROFILE"),
          m_flash_nvram(*this,"flashnv"),m_ram_nvram(*this,"ramnv") {}
     void asneo(machine_config &cfg);
@@ -72,6 +76,7 @@ private:
     required_device_array<neo_serial_peer_device,2> m_serial_peer;
     required_device<printer_image_device> m_usb_printer;
     required_device<neo_usb_link_device> m_usb_link;
+    required_device<speaker_sound_device> m_pwm_speaker;
     required_ioport_array<16> m_rows;
     required_ioport m_nor_config;
     required_device<nvram_device> m_flash_nvram;
@@ -84,17 +89,23 @@ private:
     neo::vz_core m_vz;
     neo::vz_spi1 m_spi1;
     neo::vz_spi2 m_spi2;
+    neo::vz_pwm m_pwm;
     neo::isp1763 m_usb;
     neo_usb::usb_function m_printer_function;
     emu_timer *m_clk32_timer=nullptr;
     emu_timer *m_usb_timer=nullptr;
     emu_timer *m_spi1_timer=nullptr;
     emu_timer *m_spi2_timer=nullptr;
+    emu_timer *m_pwm1_timer=nullptr;
+    emu_timer *m_pwm1_fall_timer=nullptr;
+    emu_timer *m_pwm2_timer=nullptr;
     std::array<emu_timer *,2> m_compare_timers{};
     void update_vz_irq();
     void update_usb_irq();
     void update_spi_irq();
     void spi1_schedule();
+    void pwm_schedule();
+    void pwm_update_irq();
     void update_keyboard_irq(bool transition);
     u8 port_d_pins();
     void update_vz_clock();
@@ -105,6 +116,9 @@ private:
     TIMER_CALLBACK_MEMBER(usb_service);
     TIMER_CALLBACK_MEMBER(spi1_bit);
     TIMER_CALLBACK_MEMBER(spi2_complete);
+    TIMER_CALLBACK_MEMBER(pwm1_period);
+    TIMER_CALLBACK_MEMBER(pwm1_fall);
+    TIMER_CALLBACK_MEMBER(pwm2_period);
     TIMER_CALLBACK_MEMBER(timer1_compare);
     TIMER_CALLBACK_MEMBER(timer2_compare);
     void cpu_space_map(address_map &map) ATTR_COLD;
@@ -152,6 +166,9 @@ void alphasneo_state::machine_start() {
     m_usb_timer=timer_alloc(FUNC(alphasneo_state::usb_service),this);
     m_spi1_timer=timer_alloc(FUNC(alphasneo_state::spi1_bit),this);
     m_spi2_timer=timer_alloc(FUNC(alphasneo_state::spi2_complete),this);
+    m_pwm1_timer=timer_alloc(FUNC(alphasneo_state::pwm1_period),this);
+    m_pwm1_fall_timer=timer_alloc(FUNC(alphasneo_state::pwm1_fall),this);
+    m_pwm2_timer=timer_alloc(FUNC(alphasneo_state::pwm2_period),this);
     m_compare_timers[0]=timer_alloc(FUNC(alphasneo_state::timer1_compare),this);
     m_compare_timers[1]=timer_alloc(FUNC(alphasneo_state::timer2_compare),this);
     std::string error;
@@ -192,8 +209,11 @@ void alphasneo_state::nvram_seed_flash(nvram_device &,void *base,size_t size) {
 void alphasneo_state::machine_reset() {
     if(!m_firmware_valid)return;
     m_keyboard.reset();m_lcd.reset();m_usb.reset();m_registers.fill(0);
-    m_spi1.reset();m_spi2.reset();
+    m_spi1.reset();m_spi2.reset();m_pwm.reset();
     m_spi1_timer->adjust(attotime::never);m_spi2_timer->adjust(attotime::never);
+    m_pwm1_timer->adjust(attotime::never);m_pwm1_fall_timer->adjust(attotime::never);
+    m_pwm2_timer->adjust(attotime::never);
+    m_pwm_speaker->level_w(0);
     m_printer_function=neo_usb::usb_function{};
     m_pd_last_pins=0xff; m_pd_edges=0;
     m_nor.select_profile((m_nor_config->read()&1)?
@@ -276,6 +296,40 @@ TIMER_CALLBACK_MEMBER(alphasneo_state::spi2_complete) {
     m_spi2.complete(0xffff);
     logerror("NEO_SPI2_OBSERVE data=%04x count=%u\n",m_spi2.data,m_spi2.transfers);
 }
+void alphasneo_state::pwm_update_irq() {
+    m_vz.set_pending(0x00000080U,m_pwm.irq());
+    update_vz_irq();
+}
+void alphasneo_state::pwm_schedule() {
+    m_pwm1_timer->adjust(attotime::never);
+    m_pwm1_fall_timer->adjust(attotime::never);
+    m_pwm2_timer->adjust(attotime::never);
+    const u32 hz=(m_pwm.control&0x8000)?neo::vz_core::xtal_hz:m_vz.sysclk_hz();
+    if(m_pwm.enabled()&&hz){
+        const u64 ticks=u64(m_pwm.period_steps())*m_pwm.divider();
+        m_pwm1_timer->adjust(attotime::from_ticks(ticks,hz),0,attotime::from_ticks(ticks,hz));
+    }
+    if(m_pwm.pwm2_enabled()&&hz && m_pwm.period2)
+        m_pwm2_timer->adjust(attotime::from_ticks(m_pwm.period2,hz),0,
+            attotime::from_ticks(m_pwm.period2,hz));
+}
+TIMER_CALLBACK_MEMBER(alphasneo_state::pwm1_period) {
+    m_pwm.period_tick();
+    m_pwm_speaker->level_w(m_pwm.high?1:0);
+    m_pwm1_fall_timer->adjust(attotime::never);
+    const u32 hz=(m_pwm.control&0x8000)?neo::vz_core::xtal_hz:m_vz.sysclk_hz();
+    if(m_pwm.high && hz){
+        const unsigned ticks=std::min(unsigned(m_pwm.last_sample),m_pwm.period_steps())*m_pwm.divider();
+        if(ticks)m_pwm1_fall_timer->adjust(attotime::from_ticks(ticks,hz));
+    }
+    pwm_update_irq();
+}
+TIMER_CALLBACK_MEMBER(alphasneo_state::pwm1_fall) {
+    m_pwm.fall();m_pwm_speaker->level_w(0);
+}
+TIMER_CALLBACK_MEMBER(alphasneo_state::pwm2_period) {
+    m_pwm.pwm2_tick();
+}
 void alphasneo_state::update_serial_clock() {
     // VZ internal clock only; unattached NEO serial pins/UCLK are not fabricated.
     const u32 hz=m_vz.sysclk_hz();
@@ -287,6 +341,7 @@ void alphasneo_state::update_vz_clock() {
     update_serial_clock();
     for(unsigned n=0;n<2;++n)timer_schedule(n);
     if(m_spi1.busy)spi1_schedule();
+    pwm_schedule();
 }
 u16 alphasneo_state::timer_count(unsigned n) const {
     auto const &t=m_vz.timer_state(n);
@@ -411,6 +466,7 @@ u16 alphasneo_state::vz_r(offs_t offset,u16 mask) {
     u16 r=0xf000+(offset<<1);
     // Forward the original MAME big-endian bus mask; RX FIFO only pops
     // on the low lane, per Dana's VZ peripheral implementation.
+    if(r>=0xf500 && r<=0xf516)return m_pwm.read(r-0xf500);
     if(r>=0xf700 && r<=0xf70a){
         const unsigned reg=(r-0xf700)>>1;
         const u16 value=m_spi1.read(reg);
@@ -427,6 +483,11 @@ u16 alphasneo_state::vz_r(offs_t offset,u16 mask) {
 }
 void alphasneo_state::vz_w(offs_t offset,u16 data,u16 mask) {
     u16 r=0xf000+(offset<<1);
+    if(r>=0xf500 && r<=0xf516) {
+        m_pwm.write(r-0xf500,data,mask);
+        pwm_schedule();pwm_update_irq();
+        return;
+    }
     if(r>=0xf700 && r<=0xf70a) {
         const bool old_busy=m_spi1.busy;
         m_spi1.write((r-0xf700)>>1,data,mask);
@@ -670,6 +731,8 @@ void alphasneo_state::asneo(machine_config &cfg) {
     }
     PRINTER(cfg,m_usb_printer);
     NEO_USB_LINK(cfg,m_usb_link);
+    SPEAKER(cfg,"mono").front_center();
+    SPEAKER_SOUND(cfg,m_pwm_speaker).add_route(ALL_OUTPUTS,"mono",0.30);
     // 33 MHz is the current neo-re timing reference, not physically certified.
     NEO_VZ_CPU(cfg,m_cpu,33'000'000);
     m_cpu->set_addrmap(AS_PROGRAM,&alphasneo_state::mem_map);
