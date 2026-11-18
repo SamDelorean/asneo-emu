@@ -17,7 +17,7 @@ int main(){
  assert(p.busy);
  unsigned bits=0;
  for(;p.busy && bits<17;++bits) p.shift_bit(true);
- assert(bits==8 && p.read(4)==0x0100);
+ assert(bits==8 && p.read(4)==0x0010);
  assert(p.irq());
  assert(p.read(0)==0x00ff);
  assert(!p.irq());
@@ -34,7 +34,7 @@ int main(){
  assert(!q.busy && (q.read(1)&0x0180)==0x0080);
  assert((q.read(0)&0xff)==0xff);
  assert(q.transfers==1);
- q.write(1,0x0347);
+ q.write(1,0x03c7);
  assert(q.busy);
  q.complete(0x12);
  assert(q.irq());
