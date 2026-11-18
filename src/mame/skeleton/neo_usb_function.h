@@ -17,6 +17,10 @@ using word=std::uint16_t;
 // loopback (bulk, interrupt and ISO). This is never the Dana upstream identity.
 struct usb_function {
     byte kind=0,address=0,configuration=0,pending_address=0;
+    // Alternate test profile for a USB/PCL printer with a published
+    // legacy 03f0:0317 identity; this emulates a USB class interface only,
+    // not proprietary HP device-control or page rendering.
+    bool legacy_pcl_identity=false;
     byte pending_configuration=0xff;
     byte control_direction=0,control_pending=0,control_stall=0,fault_status=0,fault_count=0;
     byte toggle_in[16]={},toggle_out[16]={},halt_in[16]={},halt_out[16]={};
@@ -55,8 +59,9 @@ struct usb_function {
 
     void reset() {
         byte const attached=kind;
+        const bool legacy=legacy_pcl_identity;
         *this=usb_function{};
-        kind=attached;
+        kind=attached;legacy_pcl_identity=legacy;
     }
     static word le16(byte const *p) {return word(p[0]|(word(p[1])<<8));}
     void response(byte const *p,unsigned count,unsigned requested) {
@@ -67,6 +72,8 @@ struct usb_function {
         byte const type=value>>8,index=byte(value);
         static constexpr byte device[]={18,1,0x10,1,0,0,0,64,0xff,0xff,0x61,0x11,0,1,1,2,0,1};
         // USB 1.1 standard hub descriptor, two externally powered ports.
+        static constexpr byte pcl_device[]={
+            18,1,0x10,1,0,0,0,64,0xf0,0x03,0x17,0x03,0,1,1,2,0,1};
         static constexpr byte hub_device[]={
             18,1,0x10,1,9,0,0,64,0xff,0xff,0x63,0x17,0,1,1,2,0,1};
         static constexpr byte hub_config[]={
@@ -83,6 +90,8 @@ struct usb_function {
             7,5,3,1,0xff,3,1,7,5,0x83,1,0xff,3,1};
         if(type==1) {
             if(kind==3)response(hub_device,sizeof(hub_device),requested);
+            else if(kind==1 && legacy_pcl_identity)
+                response(pcl_device,sizeof(pcl_device),requested);
             else response(device,sizeof(device),requested);
         }
         else if(type==2) {
@@ -95,8 +104,10 @@ struct usb_function {
             } else {
                 char const *s=kind==3?
                     (index==1?"NEO virtual hub":"Two-port USB hub"):
-                    (index==1?"NEO virtual printer":
-                        kind==1?"Virtual USB Printer":"USB packet loopback");
+                    (kind==1 && legacy_pcl_identity?
+                        (index==1?"Hewlett-Packard":"LaserJet 1200"):
+                        (index==1?"NEO virtual printer":
+                            kind==1?"Virtual USB Printer":"USB packet loopback"));
                 unsigned const n=unsigned(std::strlen(s));
                 control[0]=byte(2+2*n);control[1]=3;
                 for(unsigned i=0;i<n;++i){control[2+2*i]=byte(s[i]);control[3+2*i]=0;}
@@ -174,9 +185,11 @@ struct usb_function {
         } else if(type==0x20&&kind==1) {
             if(request==0) {
                 static constexpr char id[]="MFG:NEO-emu;MDL:Virtual USB Printer;CMD:PCL,POSTSCRIPT;CLS:PRINTER;";
-                unsigned const n=sizeof(id)-1;
+                static constexpr char pcl_id[]="MFG:Hewlett-Packard;MDL:LaserJet 1200;CMD:PCL;CLS:PRINTER;";
+                const char *text=(legacy_pcl_identity?pcl_id:id);
+                const unsigned n=unsigned(std::strlen(text));
                 control[0]=byte((n+2)>>8);control[1]=byte(n+2);
-                std::copy_n(reinterpret_cast<byte const *>(id),n,control+2);
+                std::copy_n(reinterpret_cast<byte const *>(text),n,control+2);
                 control_size=word(std::min<unsigned>(n+2,control_expected));
             } else if(request==1) {
                 control[0]=0x18;control_size=word(std::min<unsigned>(1,control_expected));
