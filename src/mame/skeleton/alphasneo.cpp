@@ -232,7 +232,9 @@ void alphasneo_state::machine_reset() {
     m_hub_function=neo_usb::usb_function{};
     m_hub_function.kind=3;
     m_usb_hub_topology=bool(m_usb_topology_port->read()&1);
-    logerror("NEO_USB_TOPOLOGY=%s\n",m_usb_hub_topology?"HUB2_PRINTER":"DIRECT_PRINTER");
+    logerror("NEO_USB_TOPOLOGY=%s identity=%s\n",
+        m_usb_hub_topology?"HUB2_PRINTER":"DIRECT_PRINTER",
+        (m_usb_topology_port->read()&2)?"LEGACY_PCL":"GENERIC");
     m_pd_last_pins=0xff; m_pd_edges=0;
     m_neo2_selected=bool(m_board_config->read()&1);
     logerror("NEO_BOARD_SELECTED model=%s rf_hardware=DISCONNECTED\n",
@@ -395,6 +397,7 @@ TIMER_CALLBACK_MEMBER(alphasneo_state::usb_service) {
         m_usb.set_host_attached(attached);
         m_printer_function=neo_usb::usb_function{};
         m_printer_function.kind=attached?1:0;
+        m_printer_function.legacy_pcl_identity=bool(m_usb_topology_port->read()&2);
         m_hub_function=neo_usb::usb_function{};
         m_hub_function.kind=3;
         m_hub_function.hub_attach(attached);
@@ -622,9 +625,11 @@ void alphasneo_state::mem_map(address_map &map) {
 }
 static INPUT_PORTS_START( asneo )
     PORT_START("USB_TOPOLOGY")
-    PORT_CONFNAME(0x01,0x00,"USB printer topology")
-    PORT_CONFSETTING(0x00,"Direct USB Printer")
-    PORT_CONFSETTING(0x01,"Two-port USB hub with printer on port 2")
+    PORT_CONFNAME(0x03,0x03,"USB printer topology and USB class identity")
+    PORT_CONFSETTING(0x00,"Direct, NEO generic printer")
+    PORT_CONFSETTING(0x01,"Two-port hub, NEO generic printer on port 2")
+    PORT_CONFSETTING(0x02,"Direct, legacy PCL USB printer")
+    PORT_CONFSETTING(0x03,"Two-port hub, legacy PCL printer on port 2")
     PORT_START("BOARD_VARIANT")
     PORT_CONFNAME(0x01,0x00,"Physical NEO board variant")
     PORT_CONFSETTING(0x00,"AlphaSmart NEO")
