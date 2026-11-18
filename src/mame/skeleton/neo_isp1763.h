@@ -32,7 +32,7 @@ public:
         m_regs[0xac/2]=0xffff; // INT
         m_regs[0xa6/2]=0xffff; // ISO
         m_attached=false;m_vbus=false;m_suspended=false;
-        m_atl_done=0;m_device_address=0;m_requested_address=0;
+        m_atl_done=m_int_done=0;m_device_address=0;m_requested_address=0;
         m_address_pending=false;m_root_reset_pending=false;m_ms=0;m_root_reset_until=0;
         m_port_link=false;m_port_connect_pending=false;m_port_connect_at=0;
     }
@@ -45,6 +45,7 @@ public:
         case 0x72:return u16(chip_id>>16);
         case 0x00:return m_regs[0];
         case 0xB0:{const u16 done=m_atl_done;m_atl_done=0;return done;}
+        case 0xAA:{const u16 done=m_int_done;m_int_done=0;return done;}
         case 0xA0: {
             // ISP1763A Rev04 PORTSC1 LS[1:0] (bits 11:10) report
             // actual DP/DM levels; the attached full-speed printer asserts
@@ -82,7 +83,8 @@ public:
         // but the USB wire address changes only after EP0 status IN ACK.
         case 0x00:merge(m_regs[0]);m_requested_address=u8(m_regs[0]&0x7f);
             m_address_pending=true;return;
-        case 0x8c:case 0x9c:case 0xba:case 0xb2:case 0xb4: {
+        case 0x8c:case 0x9c:case 0xba:case 0xb2:case 0xb4:
+        case 0xac:case 0xae: {
             if(m_unlocked)merge(m_regs[offset/2]);
             return;
         }
@@ -285,6 +287,67 @@ public:
         return completed;
     }
 
+    // ISP1763 periodic INT PTDs occupy HC SRAM at 0x0800 (16 x 32 bytes).
+    // The original NEO13 firmware uses this path for a hub's status-change
+    // endpoint.  This is distinct from ATL: a NAK retains the active PTD
+    // for a later 1-ms poll.  The hub itself decides whether a real change
+    // has occurred; no synthetic print data or USB ACK is supplied.
+    template<class Packet>
+    unsigned service_interrupt(Packet&& packet) {
+        if(!m_attached || (m_regs[0xa0/2]&0x1005)!=0x1005 ||
+           !(m_regs[0x8c/2]&1) || !(m_regs[0x9c/2]&1) ||
+           !(m_regs[0xba/2]&2))return 0;
+        unsigned completed=0;
+        for(unsigned slot=0;slot<16;++slot) {
+            const u16 bit=u16(1U<<slot);
+            if(m_regs[0xac/2]&bit)continue;
+            const unsigned base=0x0800+slot*32;
+            u32 w0=load32(base),w1=load32(base+4),w2=load32(base+8),w3=load32(base+12);
+            if(!(w0&1)||!(w3&0x80000000U))continue;
+            const unsigned total=(w0>>3)&0x7fff;
+            const unsigned maxpacket=(w0>>18)&0x7ff;
+            const unsigned done=w3&0x7fff;
+            const unsigned payload=0x400+(((w2>>8)&0xffff)*8);
+            if(!maxpacket || maxpacket>1024 || total>1024 || done>total ||
+                (total && (payload<0x1000 || payload+total>m_host_ram.size())))continue;
+            const unsigned code=(w1>>10)&3;
+            if(code>2 || (w1&0x4000U))continue;
+            const unsigned requested=std::min(maxpacket,total-done);
+            neo_usb::transaction tx{
+                u8((w1>>3)&0x7f),u8(((w0>>31)&1)|((w1&7)<<1)),
+                code==2?neo_usb::pid::setup:(code==1?neo_usb::pid::in:neo_usb::pid::out),
+                false,false,bool(w3&0x02000000U),u16(maxpacket)
+            };
+            std::array<u8,1024> scratch{};
+            if(tx.direction!=neo_usb::pid::in && requested)
+                std::copy_n(m_host_ram.begin()+payload+done,requested,scratch.begin());
+            const neo_usb::reply answer=packet(tx,
+                tx.direction==neo_usb::pid::in?nullptr:scratch.data(),
+                scratch.data(),u16(requested));
+            if(answer.status==neo_usb::handshake::nak ||
+               answer.status==neo_usb::handshake::timeout)continue;
+            const bool halted=answer.status!=neo_usb::handshake::ack;
+            if(!halted && answer.size>requested)continue;
+            if(!halted && tx.direction==neo_usb::pid::in && answer.size)
+                std::copy_n(scratch.begin(),answer.size,m_host_ram.begin()+payload+done);
+            const unsigned newdone=done+(halted?0:answer.size);
+            w3=(w3&~u32(0x00007fff))|newdone;
+            if(!halted)w3^=0x02000000U;
+            if(halted || newdone==total ||
+               (tx.direction==neo_usb::pid::in && answer.size<requested)){
+                w3 &=~u32(0x80000000);
+                if(halted)w3|=0x40000000U;
+                w0&=~u32(1);
+                m_regs[0xac/2]|=bit;
+                m_int_done|=bit;
+                m_host_irq|=0x0080;
+                ++completed;
+            }
+            store32(base,w0);store32(base+12,w3);
+        }
+        return completed;
+    }
+
     // Explicit packet-level upstream transport. No synthetic USB descriptors:
     // all setup requests go into the NEO firmware's EP0 SETUP FIFO.
     neo_usb::reply upstream(u8 op,u8 addr,u8 endpoint,u8 flags,
@@ -354,7 +417,7 @@ private:
     u8 m_device_address=0,m_requested_address=0;
     bool m_address_pending=false,m_root_reset_pending=false;
     u32 m_ms=0,m_root_reset_until=0;
-    u16 m_atl_done=0;
+    u16 m_atl_done=0,m_int_done=0;
     std::size_t ep_index() const {return (m_ep_select&0x20)?16:std::size_t(m_ep_select&0x0f);}
     bool resize_endpoint(std::size_t which,u16 size){
         std::size_t total=0;
@@ -383,7 +446,7 @@ private:
         for(unsigned n=0;n<4;++n)m_host_ram[offset+n]=u8(value>>(n*8));
     }
     void reset_host(){
-        m_host_ram.fill(0);m_hc_addr=m_host_irq=m_host_enable=m_atl_done=0;
+        m_host_ram.fill(0);m_hc_addr=m_host_irq=m_host_enable=m_atl_done=m_int_done=0;
         m_root_reset_pending=false;m_port_link=false;m_port_connect_pending=false;
         m_regs[0xa0/2]=0;
         m_regs[0xb2/2]=m_regs[0xac/2]=m_regs[0xa6/2]=0xffff;
@@ -422,6 +485,7 @@ private:
             case 0x58:case 0x74:case 0x78:case 0x7c:case 0x80:
             case 0x88:case 0x8c:case 0x90:case 0x94:case 0x98:
             case 0x9c:case 0xa0:case 0xa2:case 0xa4:case 0xa6:
+            case 0xa8:case 0xaa:case 0xac:case 0xae:
             case 0xb0:case 0xb2:case 0xb4:case 0xb6:case 0xba:
             case 0xbc:case 0xc0:case 0xc2:case 0xc8:case 0xca:
             case 0xcc:case 0xce:case 0xd0:case 0xd2:case 0xd8:
