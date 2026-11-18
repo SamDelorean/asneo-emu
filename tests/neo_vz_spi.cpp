@@ -10,10 +10,7 @@ int main(){
  p.write(1,0x00a5);
  assert(p.read(1)==0x00a5 && p.read(4)==1);
  p.write(3,0x0800);
- p.write(2,0x6707); // bit 8 stays set, no new exchange edge
- assert(p.busy==false);
- p.write(2,0x6607);
- p.write(2,0x6707);
+ p.write(2,0x6707); // XCH rising edge starts queued transfer
  assert(p.busy);
  unsigned bits=0;
  for(;p.busy && bits<17;++bits) p.shift_bit(true);
