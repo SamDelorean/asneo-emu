@@ -64,6 +64,7 @@ public:
          m_usb_printer(*this,"usbprinter"),m_usb_link(*this,"usbcomputer"),
           m_pwm_speaker(*this,"pwm1speaker"),
          m_rows(*this,"ROW%u",0U),m_nor_config(*this,"NOR_PROFILE"),
+          m_board_config(*this,"BOARD_VARIANT"),
          m_flash_nvram(*this,"flashnv"),m_ram_nvram(*this,"ramnv") {}
     void asneo(machine_config &cfg);
     INPUT_CHANGED_MEMBER(key_changed);
@@ -79,6 +80,7 @@ private:
     required_device<speaker_sound_device> m_pwm_speaker;
     required_ioport_array<16> m_rows;
     required_ioport m_nor_config;
+    required_ioport m_board_config;
     required_device<nvram_device> m_flash_nvram;
     required_device<nvram_device> m_ram_nvram;
     std::vector<u8> m_sram, m_flash, m_flash_seed;
@@ -126,6 +128,7 @@ private:
     std::array<u8,4096> m_registers{}; // VZ GPIO latches and PD configuration
     u8 m_pd_last_pins=0xff, m_pd_edges=0;
     bool m_firmware_valid=false;
+    bool m_neo2_selected=false;
     void mem_map(address_map &map) ATTR_COLD;
     u16 ram_r(offs_t offset,u16 mem_mask=0xffff);
     void ram_w(offs_t offset,u16 data,u16 mem_mask=0xffff);
@@ -223,6 +226,9 @@ void alphasneo_state::machine_reset() {
     m_pwm_speaker->level_w(0);
     m_printer_function=neo_usb::usb_function{};
     m_pd_last_pins=0xff; m_pd_edges=0;
+    m_neo2_selected=bool(m_board_config->read()&1);
+    logerror("NEO_BOARD_SELECTED model=%s rf_hardware=DISCONNECTED\n",
+        m_neo2_selected?"NEO2":"NEO");
     m_nor.select_profile((m_nor_config->read()&1)?
         neo::nor_flash::profile::m29w320eb:
         neo::nor_flash::profile::unknown_readonly);
@@ -591,6 +597,10 @@ void alphasneo_state::mem_map(address_map &map) {
     map(0x02000000,0x020000ff).rw(FUNC(alphasneo_state::usb_r),FUNC(alphasneo_state::usb_w));
 }
 static INPUT_PORTS_START( asneo )
+    PORT_START("BOARD_VARIANT")
+    PORT_CONFNAME(0x01,0x00,"Physical NEO board variant")
+    PORT_CONFSETTING(0x00,"AlphaSmart NEO")
+    PORT_CONFSETTING(0x01,"AlphaSmart NEO2 (radio omitted)")
     PORT_START("NOR_PROFILE")
     PORT_CONFNAME(0x01,0x00,"NEO NOR device candidate")
     PORT_CONFSETTING(0x00,"Unknown device (array read-only)")
