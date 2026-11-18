@@ -38,7 +38,10 @@ int main(){
   assert(r.status==neo_usb::handshake::ack&&r.size==18&&data[4]==9);
   ctl_status_out(hub,2);
   ctl_setup(hub,2,{{0,9,1,0,0,0,0,0}});
-  ctl_status_in(hub,2);
+  assert(hub.configuration==0); // never configure from SETUP alone
+  // This is the precise status PTD sequence from original NEO13 ROM:
+  // request 00 09 01... followed by zero-length OUT, not IN.
+  ctl_status_out(hub,2);
   assert(hub.configuration==1);
   ctl_setup(hub,2,{{0xa0,6,0,0x29,0,0,15,0}});
   r=x(hub,2,neo_usb::pid::in,0,nullptr,data.data(),15,true);
