@@ -228,6 +228,20 @@ struct usb_function {
             if(tx.toggle!=bool(toggle_out[0]))return {handshake::ack,count};
             toggle_out[0]^=1;
             if(control_direction&&count==0)control_pending=0;
+            else if(!control_direction && control_expected==0 && count==0) {
+                // NEO13 host firmware emits a zero-length OUT PTD as the
+                // status packet for some no-data SET_CONFIGURATION requests
+                // (confirmed on the real guest PTD stream). Preserve the
+                // standard IN status path above, but commit a successfully
+                // acknowledged OUT status too. Never commit on setup alone.
+                address=pending_address;
+                control_pending=0;
+                if(pending_configuration!=0xff) {
+                    configuration=pending_configuration;
+                    for(unsigned i=1;i<16;++i)
+                        toggle_in[i]=toggle_out[i]=halt_in[i]=halt_out[i]=0;
+                }
+            }
             return {handshake::ack,count};
         }
         if(!configuration)return {handshake::nak,0};
