@@ -23,6 +23,35 @@ struct usb_function {
     byte control[512]={},loopback[4][1024]={};
     word control_size=0,control_cursor=0,control_expected=0,loopback_size[4]={};
     std::uint32_t accepted_bytes=0,packets=0;
+    // Explicit optional two-port full-speed hub, with printer on port 2.
+    // No radio, external USB/IP device or hidden host service is fabricated.
+    word hub_status[3]={},hub_changes[3]={};
+    byte hub_reset_ms[3]={};
+    bool hub_printer_plugged=false;
+    void hub_attach(bool connected) {
+        if(kind!=3 || connected==hub_printer_plugged)return;
+        hub_printer_plugged=connected;
+        word &status=hub_status[2];
+        if(status&0x0100) {
+            const bool was_connected=bool(status&1);
+            status=word((status&~word(3))|(connected?1:0));
+            if(was_connected!=connected)hub_changes[2]|=1;
+        }
+    }
+    void hub_tick_1ms() {
+        if(kind!=3)return;
+        for(unsigned port=1;port<=2;++port)if(hub_reset_ms[port]) {
+            if(--hub_reset_ms[port]==0) {
+                hub_status[port]=word((hub_status[port]&~word(0x0010))|
+                    ((hub_status[port]&1)?0x0002:0));
+                hub_changes[port]|=0x0010;
+            }
+        }
+    }
+    bool hub_child_enabled() const {
+        return kind==3 && (hub_status[2]&0x103)==0x103 &&
+            !hub_reset_ms[2];
+    }
 
     void reset() {
         byte const attached=kind;
@@ -37,6 +66,13 @@ struct usb_function {
     void descriptor(word value,word requested) {
         byte const type=value>>8,index=byte(value);
         static constexpr byte device[]={18,1,0x10,1,0,0,0,64,0xff,0xff,0x61,0x11,0,1,1,2,0,1};
+        // USB 1.1 standard hub descriptor, two externally powered ports.
+        static constexpr byte hub_device[]={
+            18,1,0x10,1,9,0,0,64,0xff,0xff,0x63,0x17,0,1,1,2,0,1};
+        static constexpr byte hub_config[]={
+            9,2,25,0,1,1,0,0xe0,25,
+            9,4,0,0,1,9,0,0,0,
+            7,5,0x81,3,1,0,12};
         static constexpr byte printer_config[]={
             9,2,32,0,1,1,0,0x80,25,9,4,0,0,2,7,1,2,0,
             7,5,1,2,64,0,0,7,5,0x82,2,64,0,0};
@@ -45,15 +81,22 @@ struct usb_function {
             7,5,1,2,64,0,0,7,5,0x81,2,64,0,0,
             7,5,2,3,8,0,1,7,5,0x82,3,8,0,1,
             7,5,3,1,0xff,3,1,7,5,0x83,1,0xff,3,1};
-        if(type==1)response(device,sizeof(device),requested);
+        if(type==1) {
+            if(kind==3)response(hub_device,sizeof(hub_device),requested);
+            else response(device,sizeof(device),requested);
+        }
         else if(type==2) {
             if(kind==1)response(printer_config,sizeof(printer_config),requested);
+            else if(kind==3)response(hub_config,sizeof(hub_config),requested);
             else response(loop_config,sizeof(loop_config),requested);
         } else if(type==3) {
             if(!index) {
                 byte const languages[]={4,3,9,4};response(languages,4,requested);
             } else {
-                char const *s=index==1?"NEO virtual printer":kind==1?"Virtual USB Printer":"USB packet loopback";
+                char const *s=kind==3?
+                    (index==1?"NEO virtual hub":"Two-port USB hub"):
+                    (index==1?"NEO virtual printer":
+                        kind==1?"Virtual USB Printer":"USB packet loopback");
                 unsigned const n=unsigned(std::strlen(s));
                 control[0]=byte(2+2*n);control[1]=3;
                 for(unsigned i=0;i<n;++i){control[2+2*i]=byte(s[i]);control[3+2*i]=0;}
@@ -87,6 +130,47 @@ struct usb_function {
             case 11:if(value)control_stall=1;break;
             default:control_stall=1;break;
             }
+        } else if(type==0x20&&kind==3) {
+            // USB hub class requests from the original NEO13 host stack.
+            // Only a genuine two-port hub is exposed in this topology.
+            if(request==6 && (value>>8)==0x29) {
+                static constexpr byte hub_descriptor[]={
+                    9,0x29,2,0x09,0x00,20,0,0,0xff};
+                response(hub_descriptor,sizeof(hub_descriptor),control_expected);
+            } else if(request==0) {
+                if(recipient==3 && index>=1 && index<=2) {
+                    const word st=hub_status[index],ch=hub_changes[index];
+                    control[0]=byte(st);control[1]=byte(st>>8);
+                    control[2]=byte(ch);control[3]=byte(ch>>8);
+                } else if(recipient==0) {
+                    std::fill_n(control,4,0);
+                } else control_stall=1;
+                control_size=word(std::min<unsigned>(4,control_expected));
+            } else if((request==3||request==1) &&
+                      recipient==3 && index>=1 && index<=2) {
+                const bool set=request==3;
+                const unsigned port=index;
+                if(value==8) { // PORT_POWER
+                    if(set) {
+                        hub_status[port]|=0x0100;
+                        if(port==2 && hub_printer_plugged) {
+                            hub_status[port]|=1;hub_changes[port]|=1;
+                        }
+                    } else {hub_status[port]=hub_changes[port]=0;
+                        hub_reset_ms[port]=0;}
+                } else if(value==4 && set) { // PORT_RESET
+                    if(hub_status[port]&0x0101) {
+                        hub_status[port]=word((hub_status[port]|0x0010)&~word(2));
+                        hub_reset_ms[port]=10;
+                    }
+                } else if(value==1 && set)hub_status[port]|=2; // ENABLE
+                else if(!set && value==16)hub_changes[port]&=~word(1); // C_CONNECTION
+                else if(!set && value==17)hub_changes[port]&=~word(2); // C_ENABLE
+                else if(!set && value==20)hub_changes[port]&=~word(0x10); // C_RESET
+                else if(!set && value==4)hub_status[port]&=~word(0x0010);
+                else if(!set && value==1)hub_status[port]&=~word(2);
+                else control_stall=1;
+            } else control_stall=1;
         } else if(type==0x20&&kind==1) {
             if(request==0) {
                 static constexpr char id[]="MFG:NEO-emu;MDL:Virtual USB Printer;CMD:PCL,POSTSCRIPT;CLS:PRINTER;";
@@ -134,6 +218,14 @@ struct usb_function {
             return {handshake::ack,count};
         }
         if(!configuration)return {handshake::nak,0};
+        if(kind==3 && ep==1 && tx.direction==pid::in) {
+            if(!in || !count)return {handshake::pid_error,0};
+            byte flags=0;
+            for(unsigned port=1;port<=2;++port)
+                if(hub_changes[port])flags|=byte(1U<<port);
+            if(!flags)return {handshake::nak,0};
+            in[0]=flags;return {handshake::ack,1};
+        }
         if(fault_count){--fault_count;return {handshake(fault_status),0};}
         bool const input=tx.direction==pid::in;
         if((input?halt_in[ep]:halt_out[ep]))return {handshake::stall,0};
