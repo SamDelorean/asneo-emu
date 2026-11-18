@@ -407,7 +407,7 @@ TIMER_CALLBACK_MEMBER(alphasneo_state::usb_service) {
             unsigned(attached),m_usb_hub_topology?"HUB2":"DIRECT");
     }
     if(m_usb_hub_topology)m_hub_function.hub_tick_1ms();
-    m_usb.service_host([this](neo_usb::transaction const &tx,const u8 *out,u8 *in,u16 length) {
+    const auto host_packet=[this](neo_usb::transaction const &tx,const u8 *out,u8 *in,u16 length) {
         const auto printer_sink=[this](u8 value)->bool {
             if(!m_usb_printer->is_ready())return false;
             m_usb_printer->output(value);
@@ -438,7 +438,9 @@ TIMER_CALLBACK_MEMBER(alphasneo_state::usb_service) {
                 out&&length>=8?out[2]:0,out&&length>=8?out[3]:0);
         }
         return answer;
-    });
+    };
+    m_usb.service_host(host_packet);
+    m_usb.service_interrupt(host_packet); // ISP1763 HC INT PTDs / hub status change
     m_usb_link->poll([this](u8 op,u8 addr,u8 ep,u8 flags,const u8 *out,u8 *in,u16 length) {
         return m_usb.upstream(op,addr,ep,flags,out,in,length);
     });
