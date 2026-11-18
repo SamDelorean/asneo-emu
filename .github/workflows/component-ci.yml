@@ -37,3 +37,6 @@ jobs:
           ${{ matrix.compiler }} -std=c++17 -Wall -Wextra -Werror -pedantic \
             -Isrc/mame/skeleton tests/neo_vz_spi.cpp -o /tmp/asneo-tests/spi
           /tmp/asneo-tests/spi
+          ${{ matrix.compiler }} -std=c++17 -Wall -Wextra -Werror -pedantic \
+            -Isrc/mame/skeleton tests/neo_vz_pwm.cpp -o /tmp/asneo-tests/pwm
+          /tmp/asneo-tests/pwm
