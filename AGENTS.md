@@ -2,6 +2,8 @@
 Fecha: 2026-11-14. Alcance: TODO el repositorio `SamDelorean/asneo-emu`. Autoridad: instrucciones del usuario; cualquier instrucción más reciente y explícita prevalece.
 
 ## Objetivo único
+> **Actualización 2026-11-20:** el árbol de integración NEO es `SamDelorean/mame-as3k` rama `asneo-emu` (base `isotherm/mame:asneo-emu`). Este repo es overlay histórico; no añadir trabajo nuevo aquí: portar lo pendiente (ver README) como PRs a esa rama.
+
 Construir un **solo emulador minimalista AlphaSmart NEO / NEO2** sobre **MAME** con ejecución genuina de SmallROM, System 3 y SmartApplets, aprovechando al máximo código comprobado de **DANA-emu, mame-as3k, AS2K-Emulator, ASPRO-emu, isotherm/mame y ioma8/neo-re**. Binario de trabajo previsto: `neo-diag`. No crear emuladores alternativos ni un segundo motor de CPU, pantallas sintéticas o shims que reemplacen permanentemente servicios del firmware.
 
 ## Antes de cambiar código: lectura y comparación obligatoria
